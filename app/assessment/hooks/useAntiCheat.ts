@@ -63,6 +63,7 @@ export function useAntiCheat({
       event.preventDefault();
       emit("CONTEXT_MENU", "low");
     };
+    const blockSelection = (event: Event) => event.preventDefault();
     const blockExitShortcut = (event: KeyboardEvent) => {
       const back =
         event.altKey &&
@@ -90,6 +91,8 @@ export function useAntiCheat({
     document.addEventListener("copy", copy);
     document.addEventListener("paste", paste);
     document.addEventListener("contextmenu", context);
+    document.addEventListener("selectstart", blockSelection);
+    document.addEventListener("dragstart", blockSelection);
     window.addEventListener("keydown", blockExitShortcut, true);
     window.addEventListener("popstate", stayOnAssessment);
     return () => {
@@ -99,6 +102,8 @@ export function useAntiCheat({
       document.removeEventListener("copy", copy);
       document.removeEventListener("paste", paste);
       document.removeEventListener("contextmenu", context);
+      document.removeEventListener("selectstart", blockSelection);
+      document.removeEventListener("dragstart", blockSelection);
       window.removeEventListener("keydown", blockExitShortcut, true);
       window.removeEventListener("popstate", stayOnAssessment);
     };
