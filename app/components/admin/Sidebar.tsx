@@ -38,40 +38,96 @@ const navGroups: NavGroup[] = [
   {
     group: "Overview",
     items: [
-      { href: "/admin", label: "Dashboard", icon: <LayoutDashboard size={16} /> },
+      {
+        href: "/admin",
+        label: "Dashboard",
+        icon: <LayoutDashboard size={16} />,
+      },
     ],
   },
   {
     group: "Assessments",
     items: [
-      { href: "/admin/assessments", label: "Assessments", icon: <ClipboardList size={16} /> },
-      { href: "/admin/questions", label: "Question Bank", icon: <BookOpen size={16} /> },
-      { href: "/admin/schedule", label: "Schedule & Publish", icon: <CalendarClock size={16} /> },
+      {
+        href: "/admin/assessments",
+        label: "Assessments",
+        icon: <ClipboardList size={16} />,
+      },
+      {
+        href: "/admin/questions",
+        label: "Question Bank",
+        icon: <BookOpen size={16} />,
+      },
+      {
+        href: "/admin/schedule",
+        label: "Schedule & Publish",
+        icon: <CalendarClock size={16} />,
+      },
     ],
   },
   {
     group: "Candidates",
     items: [
-      { href: "/admin/candidates", label: "Candidates", icon: <Users size={16} /> },
-      { href: "/admin/assignments", label: "Assignments", icon: <Link2 size={16} /> },
-      { href: "/admin/results", label: "Results", icon: <FileText size={16} /> },
+      {
+        href: "/admin/candidates",
+        label: "Candidates",
+        icon: <Users size={16} />,
+      },
+      {
+        href: "/admin/assignments",
+        label: "Assignments",
+        icon: <Link2 size={16} />,
+      },
+      {
+        href: "/admin/results",
+        label: "Results",
+        icon: <FileText size={16} />,
+      },
     ],
   },
   {
     group: "Analytics & AI",
     items: [
-      { href: "/admin/analytics", label: "Analytics", icon: <BarChart3 size={16} /> },
-      { href: "/admin/monitor", label: "Live Monitor", icon: <Activity size={16} /> },
-      { href: "/admin/integrity", label: "Integrity Events", icon: <ShieldAlert size={16} /> },
-      { href: "/admin/insights", label: "AI Insights", icon: <Sparkles size={16} /> },
+      {
+        href: "/admin/analytics",
+        label: "Analytics",
+        icon: <BarChart3 size={16} />,
+      },
+      {
+        href: "/admin/monitor",
+        label: "Live Monitor",
+        icon: <Activity size={16} />,
+      },
+      {
+        href: "/admin/integrity",
+        label: "Integrity Events",
+        icon: <ShieldAlert size={16} />,
+      },
+      {
+        href: "/admin/insights",
+        label: "AI Insights",
+        icon: <Sparkles size={16} />,
+      },
     ],
   },
   {
     group: "System",
     items: [
-      { href: "/admin/notifications", label: "Notifications", icon: <Bell size={16} /> },
-      { href: "/admin/audit", label: "Audit Log", icon: <ScrollText size={16} /> },
-      { href: "/admin/settings", label: "Settings", icon: <Settings size={16} /> },
+      {
+        href: "/admin/notifications",
+        label: "Notifications",
+        icon: <Bell size={16} />,
+      },
+      {
+        href: "/admin/audit",
+        label: "Audit Log",
+        icon: <ScrollText size={16} />,
+      },
+      {
+        href: "/admin/settings",
+        label: "Settings",
+        icon: <Settings size={16} />,
+      },
     ],
   },
 ];
@@ -103,59 +159,75 @@ export function Sidebar() {
       }}
     >
       {/* Logo */}
-      <div style={{
-        height: 60,
-        display: "flex",
-        alignItems: "center",
-        padding: collapsed ? "0 16px" : "0 20px",
-        borderBottom: "1px solid var(--border)",
-        gap: 10,
-        flexShrink: 0,
-      }}>
-        <div style={{
-          width: 30,
-          height: 30,
-          borderRadius: 8,
-          background: "linear-gradient(135deg, #6366F1, #8B5CF6)",
+      <div
+        style={{
+          height: 60,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
+          padding: collapsed ? "0 16px" : "0 20px",
+          borderBottom: "1px solid var(--border)",
+          gap: 10,
           flexShrink: 0,
-        }}>
+        }}
+      >
+        <div
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 8,
+            background: "linear-gradient(135deg, #6366F1, #8B5CF6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
           <Zap size={16} color="#fff" />
         </div>
         {!collapsed && (
-          <span style={{
-            fontWeight: 800,
-            fontSize: 15,
-            background: "linear-gradient(135deg, #818CF8, #A78BFA)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            backgroundClip: "text",
-            whiteSpace: "nowrap",
-          }}>
-            ExamForge
+          <span
+            style={{
+              fontWeight: 800,
+              fontSize: 15,
+              background: "linear-gradient(135deg, #818CF8, #A78BFA)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {/* ExamForge */}
+            Evalia ExamForge
           </span>
         )}
       </div>
 
       {/* Nav */}
-      <nav style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "12px 8px" }}>
-        {navGroups.map(group => (
+      <nav
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          overflowX: "hidden",
+          padding: "12px 8px",
+        }}
+      >
+        {navGroups.map((group) => (
           <div key={group.group} style={{ marginBottom: 8 }}>
             {!collapsed && (
-              <div style={{
-                padding: "8px 12px 4px",
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                color: "var(--text-muted)",
-              }}>
+              <div
+                style={{
+                  padding: "8px 12px 4px",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "var(--text-muted)",
+                }}
+              >
                 {group.group}
               </div>
             )}
-            {group.items.map(item => {
+            {group.items.map((item) => {
               const active = isActive(item.href);
               return (
                 <Link
@@ -170,7 +242,9 @@ export function Sidebar() {
                     borderRadius: 8,
                     marginBottom: 2,
                     textDecoration: "none",
-                    color: active ? "var(--accent-light)" : "var(--text-secondary)",
+                    color: active
+                      ? "var(--accent-light)"
+                      : "var(--text-secondary)",
                     background: active ? "var(--accent-muted)" : "transparent",
                     fontWeight: active ? 600 : 400,
                     fontSize: 13,
@@ -178,16 +252,20 @@ export function Sidebar() {
                     whiteSpace: "nowrap",
                     justifyContent: collapsed ? "center" : "flex-start",
                   }}
-                  onMouseEnter={e => {
+                  onMouseEnter={(e) => {
                     if (!active) {
-                      (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)";
-                      (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
+                      (e.currentTarget as HTMLElement).style.background =
+                        "var(--bg-elevated)";
+                      (e.currentTarget as HTMLElement).style.color =
+                        "var(--text-primary)";
                     }
                   }}
-                  onMouseLeave={e => {
+                  onMouseLeave={(e) => {
                     if (!active) {
-                      (e.currentTarget as HTMLElement).style.background = "transparent";
-                      (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
+                      (e.currentTarget as HTMLElement).style.background =
+                        "transparent";
+                      (e.currentTarget as HTMLElement).style.color =
+                        "var(--text-secondary)";
                     }
                   }}
                 >
@@ -196,19 +274,29 @@ export function Sidebar() {
                 </Link>
               );
             })}
-            {!collapsed && <div style={{ height: 1, background: "var(--border-subtle)", margin: "6px 12px" }} />}
+            {!collapsed && (
+              <div
+                style={{
+                  height: 1,
+                  background: "var(--border-subtle)",
+                  margin: "6px 12px",
+                }}
+              />
+            )}
           </div>
         ))}
       </nav>
 
       {/* Collapse button */}
-      <div style={{
-        borderTop: "1px solid var(--border)",
-        padding: "12px 8px",
-        flexShrink: 0,
-      }}>
+      <div
+        style={{
+          borderTop: "1px solid var(--border)",
+          padding: "12px 8px",
+          flexShrink: 0,
+        }}
+      >
         <button
-          onClick={() => setCollapsed(c => !c)}
+          onClick={() => setCollapsed((c) => !c)}
           style={{
             width: "100%",
             display: "flex",
@@ -224,16 +312,24 @@ export function Sidebar() {
             gap: 6,
             fontSize: 12,
           }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)";
-            (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.background =
+              "var(--bg-elevated)";
+            (e.currentTarget as HTMLElement).style.color =
+              "var(--text-primary)";
           }}
-          onMouseLeave={e => {
+          onMouseLeave={(e) => {
             (e.currentTarget as HTMLElement).style.background = "none";
             (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
           }}
         >
-          {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /> Collapse</>}
+          {collapsed ? (
+            <ChevronRight size={16} />
+          ) : (
+            <>
+              <ChevronLeft size={16} /> Collapse
+            </>
+          )}
         </button>
       </div>
     </aside>

@@ -2,30 +2,366 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowRight, BarChart3, Bot, CalendarDays, CheckCircle2, ChevronRight, Clock3, FileText, Sparkles, X } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  Bot,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  FileText,
+  Sparkles,
+  X,
+} from "lucide-react";
 
 type Filter = "All" | "Upcoming" | "Available" | "Completed";
 const assessments = [
-  { id: "product-analytics", title: "Product Analytics Fundamentals", topic: "Data & Analytics", duration: "45 min", questions: 30, status: "Available", due: "Due today, 5:00 PM", color: "purple" },
-  { id: "ux-research", title: "UX Research Methods", topic: "Design", duration: "30 min", questions: 20, status: "Upcoming", due: "Available Sep 18", color: "orange" },
-  { id: "digital-marketing", title: "Digital Marketing Essentials", topic: "Marketing", duration: "40 min", questions: 25, status: "Completed", due: "Completed Sep 12", score: 84, color: "blue" },
+  {
+    id: "product-analytics",
+    title: "Product Analytics Fundamentals",
+    topic: "Data & Analytics",
+    duration: "45 min",
+    questions: 30,
+    status: "Available",
+    due: "Due today, 5:00 PM",
+    color: "purple",
+  },
+  {
+    id: "ux-research",
+    title: "UX Research Methods",
+    topic: "Design",
+    duration: "30 min",
+    questions: 20,
+    status: "Upcoming",
+    due: "Available Sep 18",
+    color: "orange",
+  },
+  {
+    id: "digital-marketing",
+    title: "Digital Marketing Essentials",
+    topic: "Marketing",
+    duration: "40 min",
+    questions: 25,
+    status: "Completed",
+    due: "Completed Sep 12",
+    score: 84,
+    color: "blue",
+  },
 ];
-function ProgressRing({ value }: { value: number }) { return <div className="progress-ring" style={{ background: `conic-gradient(var(--user-accent) ${value * 3.6}deg, #e9edf3 0deg)` }}><span>{value}%</span></div>; }
+function ProgressRing({ value }: { value: number }) {
+  return (
+    <div
+      className="progress-ring"
+      style={{
+        background: `conic-gradient(var(--user-accent) ${value * 3.6}deg, #e9edf3 0deg)`,
+      }}
+    >
+      <span>{value}%</span>
+    </div>
+  );
+}
 
 export function UserDashboard() {
   const [filter, setFilter] = useState<Filter>("All");
-  const [selected, setSelected] = useState<typeof assessments[number] | null>(null);
+  const [selected, setSelected] = useState<(typeof assessments)[number] | null>(
+    null,
+  );
   const [practice, setPractice] = useState(false);
-  const visible = useMemo(() => filter === "All" ? assessments : assessments.filter(a => a.status === filter), [filter]);
-  return <main className="dashboard-main">
-    <div className="welcome-row"><div><p className="eyebrow">Monday, September 16</p><h1>Good morning, Alex</h1><p className="subtle">Here’s what’s happening with your assessments.</p></div><Link href="#assessments" className="text-link">View all assessments <ArrowRight size={16} /></Link></div>
-    <section className="next-card"><div className="next-card-content"><span className="status-pill available"><span /> Available now</span><h2>Product Analytics Fundamentals</h2><p>Demonstrate your understanding of core product metrics, funnels, and experimentation.</p><div className="assessment-facts"><span><Clock3 size={16} /> 45 minutes</span><span><FileText size={16} /> 30 questions</span><span><CalendarDays size={16} /> Due today</span></div><button className="primary-button" onClick={() => setSelected(assessments[0])}>View assessment <ChevronRight size={17} /></button></div><div className="next-card-art"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="art-icon"><BarChart3 size={34}/></div></div></section>
-    <section id="assessments" className="section"><div className="section-heading"><div><h2>Your assessments</h2><p>Keep track of every assigned assessment in one place.</p></div><div className="filter-tabs">{(["All", "Upcoming", "Available", "Completed"] as Filter[]).map(item => <button key={item} onClick={() => setFilter(item)} className={filter === item ? "selected" : ""}>{item}{item === "Available" && <b>1</b>}</button>)}</div></div><div className="assessment-grid">{visible.map(item => <article className="assessment-card" key={item.id}><div className={`card-icon ${item.color}`}><FileText size={21}/></div><div className="card-top"><span className={`status-pill ${item.status.toLowerCase()}`}><span /> {item.status}</span>{item.score && <span className="score">{item.score}%</span>}</div><h3>{item.title}</h3><p>{item.topic}</p><div className="card-facts"><span><Clock3 size={15}/>{item.duration}</span><span><FileText size={15}/>{item.questions} questions</span></div><div className="card-footer"><span className={item.status === "Available" ? "due-now" : ""}>{item.due}</span><button onClick={() => setSelected(item)}>{item.status === "Available" ? "View details" : item.status === "Completed" ? "View results" : "Details"} <ChevronRight size={16}/></button></div></article>)}</div></section>
-    <section id="performance" className="performance-section"><div className="section-heading"><div><h2>Your performance</h2><p>Insights from your completed assessments.</p></div><button className="quiet-button" onClick={() => setPractice(true)}><Sparkles size={16}/> Practice with AI</button></div><div className="performance-grid"><article className="overall-card"><div><p className="card-label">Overall average</p><strong>84%</strong><span className="positive">+6% from last month</span></div><ProgressRing value={84}/></article><article className="topics-card"><p className="card-label">Topic performance</p>{[["Product strategy", 92], ["Data analysis", 84], ["Experimentation", 71]].map(([name, value]) => <div className="topic-row" key={name as string}><div><span>{name}</span><b>{value}%</b></div><i><em style={{width: `${value}%`}}/></i></div>)}<button className="inline-action" onClick={() => setPractice(true)}>Ask AI to analyze my results <ArrowRight size={15}/></button></article><article className="ai-card"><div className="ai-icon"><Bot size={21}/></div><p className="card-label">AI study guide</p><h3>Build on your momentum</h3><p>Your strongest area is product strategy. A short practice set on experimentation can help close your remaining gap.</p><button onClick={() => setPractice(true)}>Generate practice <ArrowRight size={15}/></button></article></div></section>
-    <section id="settings" className="account-section"><div><h2>Profile & settings</h2><p>Manage your candidate profile and notification preferences.</p></div><div className="account-actions"><div className="account-person"><span className="avatar large">AM</span><div><strong>Alex Morgan</strong><span>alex.morgan@example.com</span></div></div><button className="quiet-button">Edit profile</button><button className="quiet-button">Notifications</button></div></section>
-    <section className="notifications"><CheckCircle2 size={19}/><p><strong>Assessment complete.</strong> Your Digital Marketing Essentials result is ready to review.</p><button onClick={() => setSelected(assessments[2])}>View result</button></section>
-    {selected && <AssessmentModal item={selected} close={() => setSelected(null)} />}{practice && <PracticeModal close={() => setPractice(false)} />}
-  </main>;
+  const visible = useMemo(
+    () =>
+      filter === "All"
+        ? assessments
+        : assessments.filter((a) => a.status === filter),
+    [filter],
+  );
+  return (
+    <main className="dashboard-main">
+      <div className="welcome-row">
+        <div>
+          <p className="eyebrow">Monday, September 16</p>
+          <h1>Good morning, Lawson</h1>
+          <p className="subtle">
+            Here’s what’s happening with your assessments.
+          </p>
+        </div>
+        <Link href="#assessments" className="text-link">
+          View all assessments <ArrowRight size={16} />
+        </Link>
+      </div>
+      <section className="next-card">
+        <div className="next-card-content">
+          <span className="status-pill available">
+            <span /> Available now
+          </span>
+          <h2>Product Analytics Fundamentals</h2>
+          <p>
+            Demonstrate your understanding of core product metrics, funnels, and
+            experimentation.
+          </p>
+          <div className="assessment-facts">
+            <span>
+              <Clock3 size={16} /> 45 minutes
+            </span>
+            <span>
+              <FileText size={16} /> 30 questions
+            </span>
+            <span>
+              <CalendarDays size={16} /> Due today
+            </span>
+          </div>
+          <button
+            className="primary-button"
+            onClick={() => setSelected(assessments[0])}
+          >
+            View assessment <ChevronRight size={17} />
+          </button>
+        </div>
+        <div className="next-card-art">
+          <div className="orbit orbit-one" />
+          <div className="orbit orbit-two" />
+          <div className="art-icon">
+            <BarChart3 size={34} />
+          </div>
+        </div>
+      </section>
+      <section id="assessments" className="section">
+        <div className="section-heading">
+          <div>
+            <h2 className="font-semibold">Your assessments</h2>
+            <p>Keep track of every assigned assessment in one place.</p>
+          </div>
+          <div className="filter-tabs">
+            {(["All", "Upcoming", "Available", "Completed"] as Filter[]).map(
+              (item) => (
+                <button
+                  key={item}
+                  onClick={() => setFilter(item)}
+                  className={filter === item ? "selected" : ""}
+                >
+                  {item}
+                  {item === "Available" && <b>1</b>}
+                </button>
+              ),
+            )}
+          </div>
+        </div>
+        <div className="assessment-grid">
+          {visible.map((item) => (
+            <article className="assessment-card" key={item.id}>
+              <div className={`card-icon ${item.color}`}>
+                <FileText size={21} />
+              </div>
+              <div className="card-top">
+                <span className={`status-pill ${item.status.toLowerCase()}`}>
+                  <span /> {item.status}
+                </span>
+                {item.score && <span className="score">{item.score}%</span>}
+              </div>
+              <h3>{item.title}</h3>
+              <p>{item.topic}</p>
+              <div className="card-facts">
+                <span>
+                  <Clock3 size={15} />
+                  {item.duration}
+                </span>
+                <span>
+                  <FileText size={15} />
+                  {item.questions} questions
+                </span>
+              </div>
+              <div className="card-footer">
+                <span className={item.status === "Available" ? "due-now" : ""}>
+                  {item.due}
+                </span>
+                <button onClick={() => setSelected(item)}>
+                  {item.status === "Available"
+                    ? "View details"
+                    : item.status === "Completed"
+                      ? "View results"
+                      : "Details"}{" "}
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section id="performance" className="performance-section">
+        <div className="section-heading">
+          <div>
+            <h2 className="font-semibold text-gray-300">Your performance</h2>
+            <p>Insights from your completed assessments.</p>
+          </div>
+          <button className="quiet-button" onClick={() => setPractice(true)}>
+            <Sparkles size={16} /> Practice with AI
+          </button>
+        </div>
+        <div className="performance-grid">
+          <article className="overall-card">
+            <div>
+              <p className="card-label">Overall average</p>
+              <strong>84%</strong>
+              <span className="positive">+6% from last month</span>
+            </div>
+            <ProgressRing value={84} />
+          </article>
+          <article className="topics-card">
+            <p className="card-label">Topic performance</p>
+            {[
+              ["Product strategy", 92],
+              ["Data analysis", 84],
+              ["Experimentation", 71],
+            ].map(([name, value]) => (
+              <div className="topic-row" key={name as string}>
+                <div>
+                  <span>{name}</span>
+                  <b>{value}%</b>
+                </div>
+                <i>
+                  <em style={{ width: `${value}%` }} />
+                </i>
+              </div>
+            ))}
+            <button className="inline-action" onClick={() => setPractice(true)}>
+              Ask AI to analyze my results <ArrowRight size={15} />
+            </button>
+          </article>
+          <article className="ai-card">
+            <div className="ai-icon">
+              <Bot size={21} />
+            </div>
+            <p className="card-label">AI study guide</p>
+            <h3>Build on your momentum</h3>
+            <p>
+              Your strongest area is product strategy. A short practice set on
+              experimentation can help close your remaining gap.
+            </p>
+            <button onClick={() => setPractice(true)}>
+              Generate practice <ArrowRight size={15} />
+            </button>
+          </article>
+        </div>
+      </section>
+      <section id="settings" className="account-section">
+        <div>
+          <h2>Profile & settings</h2>
+          <p>Manage your candidate profile and notification preferences.</p>
+        </div>
+        <div className="account-actions">
+          <div className="account-person">
+            <span className="avatar large">LS</span>
+            <div>
+              <strong>Lawson Samson</strong>
+              <span>lawsonsamson22@gmail.com</span>
+            </div>
+          </div>
+          <button className="quiet-button">Edit profile</button>
+          <button className="quiet-button">Notifications</button>
+        </div>
+      </section>
+      <section className="notifications">
+        <CheckCircle2 size={19} />
+        <p>
+          <strong>Assessment complete.</strong> Your Digital Marketing
+          Essentials result is ready to review.
+        </p>
+        <button onClick={() => setSelected(assessments[2])}>View result</button>
+      </section>
+      {selected && (
+        <AssessmentModal item={selected} close={() => setSelected(null)} />
+      )}
+      {practice && <PracticeModal close={() => setPractice(false)} />}
+    </main>
+  );
 }
-function AssessmentModal({ item, close }: { item: typeof assessments[number], close: () => void }) { const done = item.status === "Completed"; return <div className="user-modal-backdrop" onClick={close}><section className="user-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={close} aria-label="Close"><X size={20}/></button><span className={`status-pill ${item.status.toLowerCase()}`}><span /> {item.status}</span><h2>{item.title}</h2><p className="modal-topic">{item.topic}</p>{done ? <><div className="result-summary"><ProgressRing value={item.score ?? 0}/><div><strong>{item.score}%</strong><p>Great work — your result is above the cohort average.</p></div></div><div className="result-actions"><button className="quiet-button">Review answers</button><button className="primary-button">Ask AI about missed answers</button></div></> : <><div className="rules"><h3>Before you begin</h3><p>Complete this assessment in one sitting. You’ll have {item.duration} to answer {item.questions} questions.</p><p>Your progress will be saved only after submission.</p></div>{item.status === "Available" ? <Link href={`/assessment/${item.id}`} className="primary-button modal-start">Start assessment <ArrowRight size={17}/></Link> : <p className="modal-note">This assessment will become available on September 18.</p>}</>}</section></div>; }
-function PracticeModal({ close }: { close: () => void }) { return <div className="user-modal-backdrop" onClick={close}><section className="user-modal practice-modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={close} aria-label="Close"><X size={20}/></button><div className="ai-icon"><Bot size={21}/></div><p className="eyebrow">AI practice</p><h2>Focus on experimentation</h2><p>Based on your results, we’ll generate a short set of practice questions around hypothesis design and interpreting experiment outcomes.</p><button className="primary-button">Generate 5 questions <Sparkles size={16}/></button></section></div>; }
+function AssessmentModal({
+  item,
+  close,
+}: {
+  item: (typeof assessments)[number];
+  close: () => void;
+}) {
+  const done = item.status === "Completed";
+  return (
+    <div className="user-modal-backdrop" onClick={close}>
+      <section className="user-modal" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" onClick={close} aria-label="Close">
+          <X size={20} />
+        </button>
+        <span className={`status-pill ${item.status.toLowerCase()}`}>
+          <span /> {item.status}
+        </span>
+        <h2>{item.title}</h2>
+        <p className="modal-topic">{item.topic}</p>
+        {done ? (
+          <>
+            <div className="result-summary">
+              <ProgressRing value={item.score ?? 0} />
+              <div>
+                <strong>{item.score}%</strong>
+                <p>Great work — your result is above the cohort average.</p>
+              </div>
+            </div>
+            <div className="result-actions">
+              <button className="quiet-button">Review answers</button>
+              <button className="primary-button">
+                Ask AI about missed answers
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="rules">
+              <h3>Before you begin</h3>
+              <p>
+                Complete this assessment in one sitting. You’ll have{" "}
+                {item.duration} to answer {item.questions} questions.
+              </p>
+              <p>Your progress will be saved only after submission.</p>
+            </div>
+            {item.status === "Available" ? (
+              <Link
+                href={`/assessment/${item.id}`}
+                className="primary-button modal-start"
+              >
+                Start assessment <ArrowRight size={17} />
+              </Link>
+            ) : (
+              <p className="modal-note">
+                This assessment will become available on September 18.
+              </p>
+            )}
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+function PracticeModal({ close }: { close: () => void }) {
+  return (
+    <div className="user-modal-backdrop" onClick={close}>
+      <section
+        className="user-modal practice-modal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button className="modal-close" onClick={close} aria-label="Close">
+          <X size={20} />
+        </button>
+        <div className="ai-icon">
+          <Bot size={21} />
+        </div>
+        <p className="eyebrow">AI practice</p>
+        <h2>Focus on experimentation</h2>
+        <p>
+          Based on your results, we’ll generate a short set of practice
+          questions around hypothesis design and interpreting experiment
+          outcomes.
+        </p>
+        <button className="primary-button">
+          Generate 5 questions <Sparkles size={16} />
+        </button>
+      </section>
+    </div>
+  );
+}
