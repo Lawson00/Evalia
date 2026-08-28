@@ -2,8 +2,15 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ExamForge – Assessment Management Platform",
-  description: "Professional online examination and assessment management system for administrators.",
+  title: "Assessment AI — AI-Powered Online Assessment Platform",
+  description:
+    "Assessment AI is a secure online assessment platform for creating assessments, conducting monitored examinations, and analyzing candidate performance with AI-assisted tools.",
+  openGraph: {
+    title: "Assessment AI — AI-Powered Online Assessment Platform",
+    description:
+      "Assessment AI is a secure online assessment platform for creating assessments, conducting monitored examinations, and analyzing candidate performance with AI-assisted tools.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
