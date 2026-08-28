@@ -20,10 +20,10 @@ export function LandingFooter() {
 
         {/* Quick links */}
         <nav aria-label="Footer navigation" className="landing-footer-links">
-          <Link href="/admin" className="landing-footer-link">
+          <Link href="/admin/login" className="landing-footer-link">
             Admin Login
           </Link>
-          <Link href="/user" className="landing-footer-link">
+          <Link href="/user/login" className="landing-footer-link">
             Candidate Login
           </Link>
         </nav>

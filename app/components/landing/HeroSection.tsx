@@ -22,11 +22,11 @@ export function HeroSection() {
           </p>
 
           <div className="landing-hero-actions">
-            <Link href="/user" className="landing-cta-primary" id="hero-candidate-login">
+            <Link href="/user/login" className="landing-cta-primary" id="hero-candidate-login">
               Candidate Login
               <ArrowRight size={16} aria-hidden="true" />
             </Link>
-            <Link href="/admin" className="landing-cta-ghost" id="hero-admin-login">
+            <Link href="/admin/login" className="landing-cta-ghost" id="hero-admin-login">
               Admin Login
             </Link>
           </div>

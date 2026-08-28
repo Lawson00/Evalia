@@ -26,7 +26,7 @@ export function RoleSection() {
               analyze candidate performance.
             </p>
             <Link
-              href="/admin"
+              href="/admin/login"
               className="landing-role-btn"
               id="role-admin-login"
             >
@@ -45,7 +45,7 @@ export function RoleSection() {
               environment, and review results.
             </p>
             <Link
-              href="/user"
+              href="/user/login"
               className="landing-role-btn landing-role-btn--primary"
               id="role-candidate-login"
             >

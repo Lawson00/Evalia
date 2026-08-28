@@ -36,11 +36,15 @@ export function LandingNavbar() {
     >
       <div className="landing-nav-inner">
         {/* Logo */}
-        <Link href="/" className="landing-logo" aria-label="Assessment AI – Home">
+        <Link
+          href="/"
+          className="landing-logo"
+          aria-label="Assessment AI – Home"
+        >
           <span className="landing-logo-mark" aria-hidden="true">
             <Sparkles size={15} />
           </span>
-          <span>Assessment AI</span>
+          <span>Evalia</span>
         </Link>
 
         {/* Desktop nav links */}
@@ -61,10 +65,18 @@ export function LandingNavbar() {
 
         {/* Desktop CTA buttons */}
         <div className="landing-nav-actions">
-          <Link href="/admin" className="landing-btn-ghost" id="nav-admin-login">
+          <Link
+            href="/auth/admin"
+            className="landing-btn-ghost"
+            id="nav-admin-login"
+          >
             Admin Login
           </Link>
-          <Link href="/user" className="landing-btn-primary" id="nav-candidate-login">
+          <Link
+            href="/auth/candidate"
+            className="landing-btn-primary"
+            id="nav-candidate-login"
+          >
             Candidate Login
           </Link>
         </div>

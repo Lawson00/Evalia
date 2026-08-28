@@ -17,14 +17,14 @@ export function FinalCTA() {
         </p>
         <div className="landing-cta-buttons">
           <Link
-            href="/admin"
+            href="/admin/login"
             className="landing-cta-ghost landing-cta-ghost--lg"
             id="final-admin-login"
           >
             Admin Login
           </Link>
           <Link
-            href="/user"
+            href="/user/login"
             className="landing-cta-primary landing-cta-primary--lg"
             id="final-candidate-login"
           >
