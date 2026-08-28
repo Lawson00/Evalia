@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, LineChart, Line, ScatterChart, Scatter, ZAxis,
   Legend,
 } from "recharts";
-import { Tabs } from "../../components/ui/Tabs";
+import { Tabs } from "@/components/ui/Tabs";
 import { BarChart3, Target } from "lucide-react";
 
 const scoreDistribution = [

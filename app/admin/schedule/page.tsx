@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { CalendarClock, ChevronLeft, ChevronRight, Eye, EyeOff, Clock, Users } from "lucide-react";
-import { Badge } from "../../components/ui/Badge";
+import { Badge } from "@/components/ui/Badge";
 
 interface ScheduledAssessment {
   id: string;

@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { Sidebar } from "../components/admin/Sidebar";
-import { TopBar } from "../components/admin/TopBar";
+import { Sidebar } from "@/components/admin/Sidebar";
+import { TopBar } from "@/components/admin/TopBar";
 
 export const metadata: Metadata = {
-  title: "Admin – ExamForge",
-  description: "ExamForge administration panel",
+  title: "Lecturer Hub – Evalia",
+  description: "Evalia lecturer administration and assignment portal",
 };
 
-export default function AdminLayout({ children }: LayoutProps<"/admin">) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       <Sidebar />

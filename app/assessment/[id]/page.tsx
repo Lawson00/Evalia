@@ -1,8 +1,10 @@
-import { AssessmentTaker } from "../components/AssessmentTaker";
+import { AssessmentTaker } from "@/components/assessment/AssessmentTaker";
 
 export default async function AssessmentPage({
   params,
-}: PageProps<"/assessment/[id]">) {
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   return <AssessmentTaker assessmentId={id} />;
 }

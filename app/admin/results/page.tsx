@@ -2,8 +2,8 @@
 
 import React, { useState } from "react";
 import { Download, Search, ChevronDown, Filter, Clock, CheckCircle, XCircle } from "lucide-react";
-import { Badge } from "../../components/ui/Badge";
-import { DataTable, Column } from "../../components/ui/DataTable";
+import { Badge } from "@/components/ui/Badge";
+import { DataTable, Column } from "@/components/ui/DataTable";
 
 interface Result {
   id: string;

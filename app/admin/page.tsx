@@ -8,7 +8,6 @@ import {
   Activity,
   TrendingUp,
   Plus,
-  UserPlus,
   Eye,
   ChevronRight,
   Clock,
@@ -16,11 +15,9 @@ import {
   AlertCircle,
   Circle,
   Zap,
-  Brain,
-  Shield,
 } from "lucide-react";
-import { StatCard } from "../components/ui/StatCard";
-import { Badge } from "../components/ui/Badge";
+import { StatCard } from "@/components/ui/StatCard";
+import { Badge } from "@/components/ui/Badge";
 import {
   AreaChart,
   Area,
@@ -61,7 +58,7 @@ const recentActivity = [
   {
     id: 3,
     type: "publish",
-    text: "'CISSP Mock Exam 2026' published and opened for enrolment",
+    text: "'CISSP Mock Exam 2026' published and assigned to Security Class A",
     time: "18 min ago",
     icon: <Circle size={14} />,
     color: "var(--status-info)",
@@ -92,17 +89,17 @@ const recentActivity = [
   },
 ];
 
-const liveAssessments = [
+const liveAssignments = [
   {
-    id: 1,
+    id: "a1",
     title: "AWS Solutions Architect – Practice 3",
     active: 14,
     flagged: 1,
     progress: 72,
   },
-  { id: 2, title: "CISSP Mock Exam 2026", active: 8, flagged: 0, progress: 45 },
+  { id: "a2", title: "CISSP Cybersecurity Mock Exam 2026", active: 8, flagged: 0, progress: 45 },
   {
-    id: 3,
+    id: "a4",
     title: "Network+ Certification Prep",
     active: 6,
     flagged: 2,
@@ -110,26 +107,26 @@ const liveAssessments = [
   },
 ];
 
-const upcomingAssessments = [
+const upcomingAssignments = [
   {
-    id: 1,
-    title: "Python Developer Level 2",
-    date: "Aug 17, 2026",
-    enrolled: 42,
-    status: "published" as const,
-  },
-  {
-    id: 2,
-    title: "Data Analyst Cert – Q4",
+    id: "a3",
+    title: "Python Programming Level 2 Assessment",
     date: "Aug 19, 2026",
-    enrolled: 28,
+    enrolled: 67,
     status: "published" as const,
   },
   {
-    id: 3,
-    title: "Cybersecurity Fundamentals",
-    date: "Aug 21, 2026",
-    enrolled: 15,
+    id: "a2",
+    title: "CISSP Cybersecurity Mock Exam 2026",
+    date: "Aug 25, 2026",
+    enrolled: 89,
+    status: "published" as const,
+  },
+  {
+    id: "a6",
+    title: "Cybersecurity Fundamentals Midterm",
+    date: "Sep 01, 2026",
+    enrolled: 0,
     status: "draft" as const,
   },
 ];
@@ -163,65 +160,49 @@ export default function AdminDashboard() {
               marginBottom: 4,
             }}
           >
-            Operations Dashboard
+            Lecturer Operations Dashboard
           </h1>
           <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-            Friday, Aug 15 2026 &nbsp;·&nbsp; 3 active exams in progress
+            Friday, Aug 28 2026 &nbsp;·&nbsp; 3 active assignments in progress
           </p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          {[
-            {
-              icon: <Plus size={14} />,
-              label: "New Assessment",
-              href: "/admin/assessments",
-              primary: true,
-            },
-            {
-              icon: <UserPlus size={14} />,
-              label: "Invite Candidate",
-              href: "/admin/candidates",
-              primary: false,
-            },
-            {
-              icon: <Eye size={14} />,
-              label: "Live Monitor",
-              href: "/admin/monitor",
-              primary: false,
-            },
-          ].map((btn) => (
-            <Link
-              key={btn.label}
-              href={btn.href}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 16px",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 500,
-                textDecoration: "none",
-                background: btn.primary
-                  ? "var(--accent)"
-                  : "var(--bg-elevated)",
-                color: btn.primary ? "#fff" : "var(--text-secondary)",
-                border: `1px solid ${btn.primary ? "var(--accent)" : "var(--border)"}`,
-                transition: "opacity 0.15s, transform 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.opacity = "0.85";
-                (e.currentTarget as HTMLElement).style.transform =
-                  "translateY(-1px)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.opacity = "1";
-                (e.currentTarget as HTMLElement).style.transform = "none";
-              }}
-            >
-              {btn.icon} {btn.label}
-            </Link>
-          ))}
+          <Link
+            href="/admin/assignments"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 16px",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: "none",
+              background: "linear-gradient(135deg, #6366F1, #8B5CF6)",
+              color: "#fff",
+              border: "none",
+            }}
+          >
+            <Plus size={14} /> Create Assignment
+          </Link>
+          <Link
+            href="/admin/assignments"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 16px",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              textDecoration: "none",
+              background: "var(--bg-elevated)",
+              color: "var(--text-secondary)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <ClipboardList size={14} /> View All Assignments
+          </Link>
         </div>
       </div>
 
@@ -235,34 +216,34 @@ export default function AdminDashboard() {
         }}
       >
         <StatCard
-          title="Total Assessments"
-          value="84"
-          subtitle="vs last month"
-          trend={12}
+          title="Total Assignments"
+          value="12"
+          subtitle="6 active this month"
+          trend={15}
           icon={<ClipboardList size={16} />}
           accent="var(--accent)"
         />
         <StatCard
-          title="Active Now"
-          value="28"
-          subtitle="candidates online"
-          trend={4}
-          icon={<Activity size={16} />}
-          accent="var(--status-active)"
-        />
-        <StatCard
-          title="Total Candidates"
-          value="1,247"
-          subtitle="registered"
+          title="Students Enrolled"
+          value="553"
+          subtitle="across 6 classes"
           trend={8}
           icon={<Users size={16} />}
           accent="var(--status-info)"
         />
         <StatCard
-          title="Avg. Pass Rate"
-          value="73.4%"
-          subtitle="last 30 days"
-          trend={-2.1}
+          title="Submissions Received"
+          value="471"
+          subtitle="graded & pending"
+          trend={12}
+          icon={<Activity size={16} />}
+          accent="var(--status-active)"
+        />
+        <StatCard
+          title="Class Pass Rate"
+          value="74.8%"
+          subtitle="avg across assignments"
+          trend={3.2}
           icon={<TrendingUp size={16} />}
           accent="var(--status-warn)"
         />
@@ -296,10 +277,10 @@ export default function AdminDashboard() {
           >
             <div>
               <div style={{ fontWeight: 600, fontSize: 14 }}>
-                Assessment Attempts
+                Daily Assignment Submissions
               </div>
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                Last 7 days
+                Last 7 days activity
               </div>
             </div>
             <Badge variant="active" dot>
@@ -356,9 +337,9 @@ export default function AdminDashboard() {
               marginBottom: 16,
             }}
           >
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Live Sessions</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Active Assignment Progress</div>
             <Link
-              href="/admin/monitor"
+              href="/admin/assignments"
               style={{
                 fontSize: 12,
                 color: "var(--accent-light)",
@@ -372,13 +353,17 @@ export default function AdminDashboard() {
             </Link>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {liveAssessments.map((a) => (
-              <div
+            {liveAssignments.map((a) => (
+              <Link
                 key={a.id}
+                href={`/admin/assignments/${a.id}`}
                 style={{
                   padding: 14,
                   background: "var(--bg-elevated)",
                   borderRadius: 8,
+                  textDecoration: "none",
+                  display: "block",
+                  transition: "background 0.15s",
                 }}
               >
                 <div
@@ -391,7 +376,7 @@ export default function AdminDashboard() {
                   <span
                     style={{
                       fontSize: 12,
-                      fontWeight: 500,
+                      fontWeight: 600,
                       color: "var(--text-primary)",
                       flex: 1,
                       marginRight: 8,
@@ -414,10 +399,10 @@ export default function AdminDashboard() {
                   }}
                 >
                   <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    {a.active} active candidates
+                    {a.active} students active
                   </span>
                   <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    {a.progress}%
+                    {a.progress}% completed
                   </span>
                 </div>
                 <div
@@ -434,20 +419,17 @@ export default function AdminDashboard() {
                       height: "100%",
                       background: "var(--accent)",
                       borderRadius: 2,
-                      transition: "width 0.5s ease",
                     }}
                   />
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
       </div>
 
       {/* Activity + Upcoming */}
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 20 }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 20 }}>
         {/* Activity feed */}
         <div
           style={{
@@ -458,56 +440,36 @@ export default function AdminDashboard() {
           }}
         >
           <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 16 }}>
-            Recent Activity
+            Recent Activity & Submissions
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            {recentActivity.map((item, i) => (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {recentActivity.map((act) => (
               <div
-                key={item.id}
+                key={act.id}
                 style={{
                   display: "flex",
+                  alignItems: "flex-start",
                   gap: 12,
-                  padding: "10px 0",
-                  borderBottom:
-                    i < recentActivity.length - 1
-                      ? "1px solid var(--border-subtle)"
-                      : "none",
+                  fontSize: 13,
                 }}
               >
                 <div
                   style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: "50%",
-                    background: `${item.color}18`,
-                    color: item.color,
+                    color: act.color,
+                    background: `${act.color}15`,
+                    borderRadius: 6,
+                    padding: 6,
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
                     flexShrink: 0,
-                    marginTop: 1,
+                    marginTop: 2,
                   }}
                 >
-                  {item.icon}
+                  {act.icon}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text-primary)",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {item.text}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--text-muted)",
-                      marginTop: 2,
-                    }}
-                  >
-                    {item.time}
+                  <div style={{ color: "var(--text-primary)" }}>{act.text}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                    {act.time}
                   </div>
                 </div>
               </div>
@@ -515,7 +477,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Upcoming assessments */}
+        {/* Upcoming Deadlines */}
         <div
           style={{
             background: "var(--bg-surface)",
@@ -524,175 +486,34 @@ export default function AdminDashboard() {
             padding: "20px 24px",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 16,
-            }}
-          >
-            <div style={{ fontWeight: 600, fontSize: 14 }}>
-              Upcoming Assessments
-            </div>
-            <Link
-              href="/admin/schedule"
-              style={{
-                fontSize: 12,
-                color: "var(--accent-light)",
-                textDecoration: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-              }}
-            >
-              View all <ChevronRight size={12} />
-            </Link>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 16 }}>
+            Upcoming Deadlines
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {upcomingAssessments.map((a) => (
-              <div
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {upcomingAssignments.map((a) => (
+              <Link
                 key={a.id}
+                href={`/admin/assignments/${a.id}`}
                 style={{
-                  padding: 14,
-                  background: "var(--bg-elevated)",
-                  borderRadius: 8,
                   display: "flex",
                   alignItems: "center",
-                  gap: 12,
-                }}
-              >
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 8,
-                    background: "var(--accent-muted)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  <ClipboardList
-                    size={15}
-                    style={{ color: "var(--accent-light)" }}
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div
-                    style={{ fontSize: 12, fontWeight: 500, marginBottom: 3 }}
-                  >
-                    {a.title}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    {a.date} · {a.enrolled} enrolled
-                  </div>
-                </div>
-                <Badge
-                  variant={a.status === "published" ? "published" : "draft"}
-                  size="sm"
-                >
-                  {a.status}
-                </Badge>
-              </div>
-            ))}
-          </div>
-
-          {/* AI Insight card */}
-          <div
-            style={{
-              marginTop: 16,
-              padding: 14,
-              background:
-                "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.08))",
-              border: "1px solid rgba(99,102,241,0.25)",
-              borderRadius: 10,
-            }}
-          >
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-              <div style={{ display: "flex", gap: 4 }}>
-                <Brain
-                  size={14}
-                  style={{
-                    color: "var(--accent-light)",
-                    marginTop: 1,
-                    flexShrink: 0,
-                  }}
-                />
-              </div>
-              <div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "var(--accent-light)",
-                    marginBottom: 4,
-                  }}
-                >
-                  AI Insight
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-secondary)",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  3 assessments scheduled next week show low content coverage in
-                  cloud architecture topics. Consider adding 8–10 targeted
-                  questions.
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick stats */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 10,
-              marginTop: 16,
-            }}
-          >
-            {[
-              {
-                label: "Integrity Score",
-                value: "94.2%",
-                icon: <Shield size={13} />,
-                color: "var(--status-active)",
-              },
-              {
-                label: "AI Coverage",
-                value: "81%",
-                icon: <Brain size={13} />,
-                color: "var(--accent-light)",
-              },
-            ].map((s) => (
-              <div
-                key={s.label}
-                style={{
+                  justifyContent: "space-between",
                   padding: 12,
                   background: "var(--bg-elevated)",
                   borderRadius: 8,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
+                  textDecoration: "none",
                 }}
               >
-                <div style={{ color: s.color }}>{s.icon}</div>
                 <div>
-                  <div
-                    style={{ fontSize: 15, fontWeight: 700, color: s.color }}
-                  >
-                    {s.value}
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", marginBottom: 2 }}>
+                    {a.title}
                   </div>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                    {s.label}
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    Due {a.date} · {a.enrolled} enrolled
                   </div>
                 </div>
-              </div>
+                <Badge variant={a.status}>{a.status}</Badge>
+              </Link>
             ))}
           </div>
         </div>
