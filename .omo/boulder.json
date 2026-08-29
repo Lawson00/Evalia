@@ -1,0 +1,14 @@
+{
+  "schema_version": 2,
+  "active_work_id": "student-portal-build",
+  "works": {
+    "student-portal-build": {
+      "work_id": "student-portal-build",
+      "active_plan": ".omo/plans/student-portal-build.md",
+      "plan_name": "student-portal-build",
+      "session_ids": ["codex:student-portal-build"],
+      "status": "active",
+      "worktree_path": null
+    }
+  }
+}

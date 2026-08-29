@@ -1,0 +1,79 @@
+Task 1 evidence: backend schema/model contract
+Timestamp: 2026-08-29 Africa/Accra
+
+Scenario 1: Valid schema mapping and insert compatibility
+Invocation: npm test --prefix backend
+Binary observable: exit code 0 and node:test pass 4 fail 0
+Exit code: 0
+Output:
+
+> evalia-backend-server@1.0.0 test
+> node --test tests/*.test.js
+
+✔ schema covers all model-referenced student assessment contract columns (44.3898ms)
+✔ schema drift checker rejects a deliberately unknown model column (13.0217ms)
+✔ assignment insert contract allows model-supported nullable and omitted fields (6.2546ms)
+✔ assignment insert contract rejects required fields the model can omit (4.2448ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 676.7165
+
+Scenario 2: Injected unknown-column drift probe
+Invocation: SCHEMA_CONTRACT_INJECT_UNKNOWN=1 npm test --prefix backend
+Binary observable: exit code 1 with assignments.temporary_unknown_fixture_column in output
+Exit code: 1
+Output:
+
+> evalia-backend-server@1.0.0 test
+> node --test tests/*.test.js
+
+✖ schema covers all model-referenced student assessment contract columns (20.1568ms)
+✔ schema drift checker rejects a deliberately unknown model column (7.6728ms)
+✔ assignment insert contract allows model-supported nullable and omitted fields (5.35ms)
+✔ assignment insert contract rejects required fields the model can omit (3.4411ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 372.713
+
+✖ failing tests:
+
+test at tests\schema-contract.test.js:209:1
+✖ schema covers all model-referenced student assessment contract columns (20.1568ms)
+  AssertionError [ERR_ASSERTION]: Schema is missing model contract columns: assignments.temporary_unknown_fixture_column
+  + actual - expected
+  
+  + [
+  +   'assignments.temporary_unknown_fixture_column'
+  + ]
+  - []
+  
+      at assertSchemaContract (C:\projects\Evalia\backend\tests\schema-contract.test.js:61:10)
+      at TestContext.<anonymous> (C:\projects\Evalia\backend\tests\schema-contract.test.js:210:3)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.start (node:internal/test_runner/test:1096:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:385:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'assignments.temporary_unknown_fixture_column' ],
+    expected: [],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+Scenario 3: Required-field/nullability regression probe
+Invocation: npm test --prefix backend
+Binary observable: test "assignment insert contract rejects required fields the model can omit" passes after mutating assignments.created_by to NOT NULL in-memory.
+
+Cleanup: Removed SCHEMA_CONTRACT_INJECT_UNKNOWN from the process environment; no database, temp table, or Supabase resource was created.
+Result: PASS
