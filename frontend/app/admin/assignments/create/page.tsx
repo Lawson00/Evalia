@@ -26,139 +26,80 @@ import {
   Layers,
   Sparkles,
   UserCheck,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
+  Key,
+  Globe,
+  Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
-import { mockTopics } from "@/app/admin/questions/page";
-import { BankQuestion } from "@/components/admin/QuestionCard";
 import api from "@/lib/api";
 
-// Mock questions for bank selection
-const availableBankQuestions: BankQuestion[] = [
-  {
-    id: "bq-1",
-    topicId: "t1",
-    prompt: "Which CPU component performs arithmetic and bitwise logical operations?",
-    type: "MCQ",
-    difficulty: "Easy",
-    points: 2,
-    explanation: "The Arithmetic Logic Unit (ALU) performs basic math and logic operations.",
-    options: [
-      { id: "o1", label: "Arithmetic Logic Unit (ALU)", isCorrect: true },
-      { id: "o2", label: "Control Unit (CU)", isCorrect: false },
-      { id: "o3", label: "Register File", isCorrect: false },
-      { id: "o4", label: "Memory Management Unit (MMU)", isCorrect: false },
-    ],
-  },
-  {
-    id: "bq-2",
-    topicId: "t1",
-    prompt: "What is the primary difference between RAM and ROM memory?",
-    type: "MCQ",
-    difficulty: "Easy",
-    points: 2,
-    explanation: "RAM is volatile memory; ROM is non-volatile.",
-    options: [
-      { id: "o1", label: "RAM is volatile; ROM is non-volatile", isCorrect: true },
-      { id: "o2", label: "RAM stores boot scripts; ROM stores active code", isCorrect: false },
-      { id: "o3", label: "ROM is faster than cache memory", isCorrect: false },
-    ],
-  },
-  {
-    id: "bq-3",
-    topicId: "t1",
-    prompt: "Which algorithm search strategy achieves O(log n) time complexity on sorted arrays?",
-    type: "MCQ",
-    difficulty: "Medium",
-    points: 4,
-    explanation: "Binary search divides the input range in half at each step.",
-    options: [
-      { id: "o1", label: "Linear Search", isCorrect: false },
-      { id: "o2", label: "Binary Search", isCorrect: true },
-      { id: "o3", label: "Depth-First Search", isCorrect: false },
-    ],
-  },
-  {
-    id: "bq-4",
-    topicId: "t2",
-    prompt: "Which AWS compute service provides serverless execution without managing EC2 instances?",
-    type: "MCQ",
-    difficulty: "Easy",
-    points: 2,
-    explanation: "AWS Lambda runs code on demand serverlessly.",
-    options: [
-      { id: "o1", label: "AWS Lambda", isCorrect: true },
-      { id: "o2", label: "Amazon EC2", isCorrect: false },
-      { id: "o3", label: "Amazon ECS", isCorrect: false },
-    ],
-  },
-  {
-    id: "bq-5",
-    topicId: "t2",
-    prompt: "What is the function of an AWS VPC Internet Gateway (IGW)?",
-    type: "MCQ",
-    difficulty: "Medium",
-    points: 4,
-    explanation: "IGW connects VPC public subnets to the public internet.",
-    options: [
-      { id: "o1", label: "Allows communication between VPC instances and the internet", isCorrect: true },
-      { id: "o2", label: "Encrypts S3 bucket data at rest", isCorrect: false },
-      { id: "o3", label: "Performs DNS query resolution", isCorrect: false },
-    ],
-  },
-  {
-    id: "bq-6",
-    topicId: "t2",
-    prompt: "Design a high-availability multi-AZ AWS database architecture using Aurora Replica.",
-    type: "Essay",
-    difficulty: "Hard",
-    points: 10,
-    explanation: "Requires primary DB instance with read replicas distributed across multiple Availability Zones.",
-    options: [
-      { id: "o1", label: "Multi-AZ replication with automated failover endpoint", isCorrect: true },
-    ],
-  },
-];
+export interface BankQuestion {
+  id: string;
+  topicId: string;
+  topicTitle?: string;
+  courseCode?: string;
+  prompt: string;
+  type: string;
+  difficulty: "Easy" | "Medium" | "Hard";
+  points: number;
+  explanation?: string;
+  options?: any[];
+}
 
-type QuestionStrategy = "multi-topic" | "single-topic" | "manual";
+export interface TopicItem {
+  id: string;
+  title: string;
+  courseCode?: string;
+  description?: string;
+}
 
 function CreateAssignmentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Basic Info State
+  // Basic Information State
   const [title, setTitle] = useState("");
-  const [courseCode, setCourseCode] = useState("CS 101");
+  const [courseCode, setCourseCode] = useState("");
   const [description, setDescription] = useState("");
-
-  // Backend DB data states
-  const [dbClasses, setDbClasses] = useState<any[]>([]);
   const [classId, setClassId] = useState<string>("");
-  const [dbTopics, setDbTopics] = useState<any[]>(mockTopics);
-  const [dbQuestions, setDbQuestions] = useState<BankQuestion[]>(availableBankQuestions);
 
-  // Question Selection Strategy State
-  const [strategy, setStrategy] = useState<QuestionStrategy>("multi-topic");
+  // DB Loaded Options
+  const [dbClasses, setDbClasses] = useState<any[]>([]);
+  const [dbTopics, setDbTopics] = useState<TopicItem[]>([]);
+  const [dbQuestions, setDbQuestions] = useState<BankQuestion[]>([]);
 
-  // Strategy 1: Multi-Topic Random Auto-Select State
-  const [selectedTopics, setSelectedTopics] = useState<string[]>(["t1", "t2"]);
-  const [targetQuestionCount, setTargetQuestionCount] = useState<number>(10);
+  // Topic Dropdown Accordion State
+  const [openTopicIds, setOpenTopicIds] = useState<string[]>([]);
+  const [topicDifficultyFilter, setTopicDifficultyFilter] = useState<Record<string, string>>({});
+  const [topicSearch, setTopicSearch] = useState<Record<string, string>>({});
 
-  // Strategy 2: Single Topic & Difficulty Filter State
-  const [singleTopicId, setSingleTopicId] = useState<string>("t1");
-  const [difficultyMode, setDifficultyMode] = useState<"mixed" | "Easy" | "Medium" | "Hard">("mixed");
+  // Question Selection Staging State
+  const [stagedQuestionIds, setStagedQuestionIds] = useState<string[]>([]);
+  const [assignedQuestions, setAssignedQuestions] = useState<BankQuestion[]>([]);
 
-  // Strategy 3: Custom Manual Picked Questions
-  const [manuallySelectedIds, setManuallySelectedIds] = useState<string[]>(["bq-1", "bq-2", "bq-4"]);
+  // Schedule & Accessibility Settings State
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  });
 
-  // Schedule & Accessibility Settings
-  const [startDate, setStartDate] = useState("2026-09-01T09:00");
-  const [endDate, setEndDate] = useState("2026-09-15T23:59");
-  const [timeLimit, setTimeLimit] = useState(60); // minutes
-  const [maxAttempts, setMaxAttempts] = useState(1);
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  });
+
+  const [timeLimit, setTimeLimit] = useState<number>(60);
+  const [passMark, setPassMark] = useState<number>(70);
   const [accessMode, setAccessMode] = useState<"class" | "password" | "public">("class");
-  const [accessPassword, setAccessPassword] = useState("");
+  const [accessPassword, setAccessPassword] = useState("EVALIA-2026-KEY");
+  const [passwordCopied, setPasswordCopied] = useState(false);
 
-  // Proctoring & Anti-Cheating Settings (Restored & Enhanced)
+  // Proctoring & Security State
   const [proctoring, setProctoring] = useState({
     enableWebcam: true,
     enableMic: false,
@@ -168,6 +109,9 @@ function CreateAssignmentContent() {
     disableCopyPaste: true,
   });
 
+  const [publishing, setPublishing] = useState(false);
+
+  // Load Database Data (Classes, Topics, Questions)
   useEffect(() => {
     const fetchCreatorData = async () => {
       try {
@@ -188,9 +132,20 @@ function CreateAssignmentContent() {
         }
 
         if (fetchedTopics.length > 0) {
-          setDbTopics(fetchedTopics);
-          setSelectedTopics(fetchedTopics.map((t: any) => t.id));
-          setSingleTopicId(fetchedTopics[0].id);
+          const formattedTopics: TopicItem[] = fetchedTopics.map((t: any) => ({
+            id: t.id,
+            title: t.title || t.name || "Topic Concept",
+            courseCode: t.course_code || t.courseCode || "CS 101",
+            description: t.description || "",
+          }));
+          setDbTopics(formattedTopics);
+          setOpenTopicIds([formattedTopics[0].id]);
+        } else {
+          // Default fallback topics
+          setDbTopics([
+            { id: "t1", title: "Computer Architecture & Operating Systems", courseCode: "CS 101" },
+            { id: "t2", title: "Cloud Infrastructure & Serverless DevOps", courseCode: "CLOUD 301" },
+          ]);
         }
 
         if (fetchedQuestions.length > 0) {
@@ -202,170 +157,257 @@ function CreateAssignmentContent() {
             return {
               id: q.id,
               topicId: q.topic_id || q.topicId || "t1",
+              topicTitle: q.topics?.title || "Topic Concept",
               prompt: q.question_text || q.prompt || "Question sentence",
               type: q.type || "MCQ",
               difficulty: ((q.difficulty || "Medium").charAt(0).toUpperCase() + (q.difficulty || "Medium").slice(1).toLowerCase()) as any,
               points: Number(q.points) || 2,
               explanation: q.explanation || "",
-              options: (Array.isArray(opts) ? opts : []).map((o: any, idx: number) => ({
-                id: `o${idx + 1}`,
-                label: typeof o === "object" ? o.label : String(o),
-                isCorrect: typeof o === "object" ? Boolean(o.isCorrect) : q.correct_answer === String(o),
-              })),
+              options: Array.isArray(opts) ? opts : [],
             };
           });
 
           setDbQuestions(formattedQuestions);
-          setManuallySelectedIds(formattedQuestions.slice(0, 3).map((q) => q.id));
         }
       } catch (err) {
-        console.error("Error loading creator data from API:", err);
+        console.error("Error loading creator data from DB:", err);
       }
     };
 
     fetchCreatorData();
   }, []);
 
-  // Calculate Selected Questions preview list
-  const getSelectedQuestions = (): BankQuestion[] => {
-    const bank = dbQuestions.length > 0 ? dbQuestions : availableBankQuestions;
-    if (strategy === "manual") {
-      return bank.filter((q) => manuallySelectedIds.includes(q.id));
-    }
-    if (strategy === "single-topic") {
-      return bank.filter((q) => {
-        const matchTopic = q.topicId === singleTopicId;
-        const matchDiff = difficultyMode === "mixed" || q.difficulty === difficultyMode;
-        return matchTopic && matchDiff;
-      });
-    }
-    // Multi-topic random selection
-    return bank.filter((q) => selectedTopics.includes(q.topicId));
+  // Accordion toggle handler
+  const toggleTopicAccordion = (topicId: string) => {
+    setOpenTopicIds((prev) =>
+      prev.includes(topicId) ? prev.filter((id) => id !== topicId) : [...prev, topicId]
+    );
   };
 
-  const selectedQuestions = getSelectedQuestions();
-  const totalPoints = selectedQuestions.reduce((sum, q) => sum + q.points, 0);
-
-  const toggleTopicSelection = (id: string) => {
-    if (selectedTopics.includes(id)) {
-      if (selectedTopics.length > 1) setSelectedTopics(selectedTopics.filter((t) => t !== id));
-    } else {
-      setSelectedTopics([...selectedTopics, id]);
-    }
+  // Checkbox toggle handler for staging questions across multiple topics
+  const toggleStageQuestion = (qId: string) => {
+    setStagedQuestionIds((prev) =>
+      prev.includes(qId) ? prev.filter((id) => id !== qId) : [...prev, qId]
+    );
   };
 
-  const toggleManualQuestion = (id: string) => {
-    if (manuallySelectedIds.includes(id)) {
-      setManuallySelectedIds(manuallySelectedIds.filter((qId) => qId !== id));
-    } else {
-      setManuallySelectedIds([...manuallySelectedIds, id]);
-    }
+  // "Add and Save Questions" button handler
+  const handleAddAndSaveQuestions = () => {
+    const newlySelected = dbQuestions.filter(
+      (q) => stagedQuestionIds.includes(q.id) && !assignedQuestions.some((aq) => aq.id === q.id)
+    );
+
+    setAssignedQuestions((prev) => [...prev, ...newlySelected]);
   };
 
-  const handlePublish = async () => {
-    if (!title.trim()) return;
+  // Remove question from assigned questions list
+  const handleRemoveAssignedQuestion = (qId: string) => {
+    setAssignedQuestions((prev) => prev.filter((q) => q.id !== qId));
+    setStagedQuestionIds((prev) => prev.filter((id) => id !== qId));
+  };
+
+  // Generate Auto Access Password / Key
+  const generateAccessKey = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let key = "EVALIA-";
+    for (let i = 0; i < 8; i++) {
+      key += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setAccessPassword(key);
+  };
+
+  // Copy password handler
+  const copyAccessPassword = () => {
+    navigator.clipboard.writeText(accessPassword);
+    setPasswordCopied(true);
+    setTimeout(() => setPasswordCopied(false), 2000);
+  };
+
+  // Submit / Publish Assignment Handler
+  const handlePublishAssignment = async () => {
+    if (!title.trim()) {
+      alert("Please enter an assignment title.");
+      return;
+    }
+
     try {
+      setPublishing(true);
       await api.post("/assignments", {
         title,
         description,
         instructions: description,
         classId: classId || (dbClasses[0]?.id || null),
+        totalPoints: assignedQuestions.reduce((sum, q) => sum + q.points, 0),
         durationMinutes: Number(timeLimit),
-        passMark: 70,
+        passMark: Number(passMark),
         scheduledStart: startDate,
+        scheduledEnd: endDate,
         dueDate: endDate,
+        accessMode,
+        accessPassword,
         proctoringEnabled: proctoring.enableWebcam,
-        questionIds: selectedQuestions.map((q) => q.id),
+        proctoringConfig: proctoring,
+        questionIds: assignedQuestions.map((q) => q.id),
         status: "active",
       });
+
+      router.push("/admin/assignments");
     } catch (err) {
-      console.error("Failed creating assignment in backend:", err);
+      console.error("Failed publishing assignment to database:", err);
+      alert("Error saving assignment to database.");
+    } finally {
+      setPublishing(false);
     }
-    router.push("/admin/assignments");
   };
 
+  const totalPoints = assignedQuestions.reduce((sum, q) => sum + q.points, 0);
+
   return (
-    <div style={{ maxWidth: 1040, margin: "0 auto" }} className="animate-fade-in">
+    <div style={{ width: "100%" }} className="animate-fade-in">
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <Link
-          href="/admin/assignments"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            color: "var(--text-muted)",
-            fontSize: 13,
-            textDecoration: "none",
-            marginBottom: 12,
-          }}
-        >
-          <ArrowLeft size={14} /> Back to Assignments Hub
-        </Link>
+      <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <Link
+            href="/admin/assignments"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              color: "var(--text-muted)",
+              fontSize: 13,
+              textDecoration: "none",
+              marginBottom: 8,
+            }}
+          >
+            <ArrowLeft size={14} /> Back to Assignments Hub
+          </Link>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)" }}>Create New Assignment</h1>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+            Select questions topic-by-topic, configure accessibility settings, and set security controls.
+          </p>
+        </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Create New Assignment</h1>
-            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-              Configure question strategies from the Question Bank, set accessibility schedules, and enable proctoring security.
-            </p>
-          </div>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Link
+            href="/admin/assignments"
+            style={{
+              padding: "9px 18px",
+              background: "none",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              color: "var(--text-secondary)",
+              fontSize: 13,
+              textDecoration: "none",
+            }}
+          >
+            Cancel
+          </Link>
 
-          <div style={{ display: "flex", gap: 10 }}>
-            <Link
-              href="/admin/assignments"
-              style={{
-                padding: "9px 18px",
-                background: "none",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                color: "var(--text-secondary)",
-                fontSize: 13,
-                textDecoration: "none",
-              }}
-            >
-              Cancel
-            </Link>
-
-            <button
-              onClick={handlePublish}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "9px 20px",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 700,
-                background: "linear-gradient(135deg, #6366F1, #8B5CF6)",
-                color: "#fff",
-                border: "none",
-                cursor: "pointer",
-                boxShadow: "0 4px 14px rgba(99, 102, 241, 0.3)",
-              }}
-            >
-              <Check size={16} /> Publish Assignment
-            </button>
-          </div>
+          <button
+            onClick={handlePublishAssignment}
+            disabled={publishing}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "9px 20px",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 700,
+              background: "linear-gradient(135deg, #6366F1, #8B5CF6)",
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+              boxShadow: "0 4px 14px rgba(99, 102, 241, 0.35)",
+              opacity: publishing ? 0.7 : 1,
+            }}
+          >
+            <Check size={16} /> {publishing ? "Publishing..." : "Publish & Save Assignment"}
+          </button>
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        {/* SECTION 1: BASIC INFORMATION */}
-        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-            <BookOpen size={18} style={{ color: "var(--accent-light)" }} /> 1. Basic Assignment Information
-          </h2>
+      {/* Main Two-Column Layout (Left Scrollable, Right Fixed/Sticky) */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, alignItems: "start" }}>
+        
+        {/* LEFT COLUMN: SCROLLABLE WORKFLOW AREA */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          
+          {/* 1. BASIC INFORMATION */}
+          <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 24 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+              <BookOpen size={18} style={{ color: "var(--accent-light)" }} /> 1. Basic Assignment Information
+            </h2>
 
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Assignment Title
+                </label>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Midterm Assessment: Cloud Architecture & OS Concepts"
+                  style={{
+                    width: "100%",
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "10px 14px",
+                    color: "var(--text-primary)",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    outline: "none",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  Target Class / Course
+                </label>
+                <select
+                  value={classId}
+                  onChange={(e) => {
+                    const selId = e.target.value;
+                    setClassId(selId);
+                    const matched = dbClasses.find((c: any) => c.id === selId);
+                    if (matched) setCourseCode(matched.course_code || matched.courseCode || "CS 101");
+                  }}
+                  style={{
+                    width: "100%",
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "10px 14px",
+                    color: "var(--text-primary)",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    outline: "none",
+                  }}
+                >
+                  {dbClasses.length > 0 ? (
+                    dbClasses.map((c: any) => (
+                      <option key={c.id} value={c.id}>
+                        {c.course_code || c.courseCode || "CS 101"} – {c.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">CS 101 - Computer Science Fundamentals</option>
+                  )}
+                </select>
+              </div>
+            </div>
+
             <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Assignment Title
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                Instructions / Description for Students
               </label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Midterm Assessment: Computer Science & Cloud Infrastructure"
+              <textarea
+                rows={3}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Write exam guidelines... e.g. Complete all questions within the allocated time limit. Ensure your webcam remains active throughout."
                 style={{
                   width: "100%",
                   background: "var(--bg-elevated)",
@@ -373,499 +415,570 @@ function CreateAssignmentContent() {
                   borderRadius: 8,
                   padding: "10px 14px",
                   color: "var(--text-primary)",
-                  fontSize: 14,
-                  fontWeight: 600,
+                  fontSize: 13,
                   outline: "none",
                 }}
               />
             </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Target Class / Code
-              </label>
-              <select
-                value={classId}
-                onChange={(e) => {
-                  const selId = e.target.value;
-                  setClassId(selId);
-                  const matched = dbClasses.find((c: any) => c.id === selId);
-                  if (matched) setCourseCode(matched.course_code || matched.courseCode || "CS 101");
-                }}
-                style={{
-                  width: "100%",
-                  background: "var(--bg-elevated)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  padding: "10px 14px",
-                  color: "var(--text-primary)",
-                  fontSize: 14,
-                  fontWeight: 600,
-                  outline: "none",
-                }}
-              >
-                {dbClasses.length > 0 ? (
-                  dbClasses.map((c: any) => (
-                    <option key={c.id} value={c.id}>
-                      {c.course_code || c.courseCode || "CS 101"} – {c.name}
-                    </option>
-                  ))
-                ) : (
-                  <>
-                    <option value="CS 101">CS 101 - Computer Science Fundamentals</option>
-                    <option value="CLOUD 301">CLOUD 301 - Cloud Computing & DevOps</option>
-                    <option value="SE 202">SE 202 - Software Architecture</option>
-                  </>
-                )}
-              </select>
-            </div>
           </div>
 
-          <div>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>
-              Instructions / Description for Students
-            </label>
-            <textarea
-              rows={3}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Complete all questions within the allocated time limit. Ensure your webcam remains on throughout the session."
-              style={{
-                width: "100%",
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                padding: "10px 14px",
-                color: "var(--text-primary)",
-                fontSize: 13,
-                outline: "none",
-              }}
-            />
-          </div>
-        </div>
-
-        {/* SECTION 2: QUESTION SELECTION STRATEGIES (QUESTION BANK INTEGRATION) */}
-        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 24 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
-              <Layers size={18} style={{ color: "var(--accent-light)" }} /> 2. Question Selection Hub (Question Bank)
-            </h2>
-
-            <Badge variant="accent" size="md">
-              {selectedQuestions.length} Questions · {totalPoints} Total Points
-            </Badge>
-          </div>
-
-          {/* Strategy Tabs */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
-            {[
-              { id: "multi-topic", label: "🎲 Multi-Topic Auto-Select", desc: "Pick multiple topics & set random question count" },
-              { id: "single-topic", label: "🎯 Topic & Difficulty Filter", desc: "Select specific topic & target difficulty" },
-              { id: "manual", label: "✍️ Custom Pick from Bank", desc: "Browse & cherry-pick specific questions" },
-            ].map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setStrategy(s.id as QuestionStrategy)}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: 4,
-                  padding: "12px 14px",
-                  borderRadius: 10,
-                  background: strategy === s.id ? "var(--accent-muted)" : "var(--bg-elevated)",
-                  border: `1px solid ${strategy === s.id ? "var(--accent)" : "var(--border)"}`,
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
-              >
-                <span style={{ fontSize: 13, fontWeight: 700, color: strategy === s.id ? "var(--accent-light)" : "var(--text-primary)" }}>
-                  {s.label}
-                </span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{s.desc}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* STRATEGY 1: MULTI-TOPIC RANDOM AUTO-SELECT */}
-          {strategy === "multi-topic" && (
-            <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, alignItems: "center" }}>
-                <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
-                    Select Topics to Draw Questions From:
-                  </label>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {mockTopics.map((topic) => {
-                      const isSelected = selectedTopics.includes(topic.id);
-                      return (
-                        <button
-                          key={topic.id}
-                          onClick={() => toggleTopicSelection(topic.id)}
-                          style={{
-                            padding: "6px 12px",
-                            borderRadius: 8,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            background: isSelected ? "var(--accent)" : "var(--bg-surface)",
-                            color: isSelected ? "#fff" : "var(--text-secondary)",
-                            border: `1px solid ${isSelected ? "var(--accent)" : "var(--border)"}`,
-                            cursor: "pointer",
-                          }}
-                        >
-                          {isSelected ? "✓ " : "+ "}{topic.title} ({topic.courseCode})
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                    Total Questions to Auto-Select:
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={targetQuestionCount}
-                    onChange={(e) => setTargetQuestionCount(Number(e.target.value))}
-                    style={{
-                      width: "100%",
-                      background: "var(--bg-surface)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 8,
-                      padding: "8px 12px",
-                      color: "var(--text-primary)",
-                      fontSize: 14,
-                      fontWeight: 700,
-                    }}
-                  />
-                </div>
+          {/* 2. QUESTION SELECTION HUB (TOPIC-BY-TOPIC DROPDOWN ACCORDIONS) */}
+          <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                  <Layers size={18} style={{ color: "var(--accent-light)" }} /> 2. Question Selection Hub
+                </h2>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                  Expand any database topic below, filter questions by difficulty, check multiple questions across topics, then click Add and Save.
+                </p>
               </div>
-            </div>
-          )}
 
-          {/* STRATEGY 2: TOPIC & DIFFICULTY FILTER */}
-          {strategy === "single-topic" && (
-            <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                    Select Topic:
-                  </label>
-                  <select
-                    value={singleTopicId}
-                    onChange={(e) => setSingleTopicId(e.target.value)}
+              <Badge variant="accent" size="md">
+                {stagedQuestionIds.length} Staged Questions
+              </Badge>
+            </div>
+
+            {/* Topic Accordions */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+              {dbTopics.map((topic) => {
+                const isOpen = openTopicIds.includes(topic.id);
+                const topicQuestions = dbQuestions.filter((q) => q.topicId === topic.id);
+                
+                // Difficulty Filter for this topic
+                const currentDiff = topicDifficultyFilter[topic.id] || "all";
+                const currentSearch = topicSearch[topic.id] || "";
+
+                const filteredTopicQuestions = topicQuestions.filter((q) => {
+                  const matchDiff = currentDiff === "all" || q.difficulty.toLowerCase() === currentDiff.toLowerCase();
+                  const matchSearch = q.prompt.toLowerCase().includes(currentSearch.toLowerCase());
+                  return matchDiff && matchSearch;
+                });
+
+                const topicStagedCount = topicQuestions.filter((q) => stagedQuestionIds.includes(q.id)).length;
+
+                return (
+                  <div
+                    key={topic.id}
                     style={{
-                      width: "100%",
-                      background: "var(--bg-surface)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 8,
-                      padding: "8px 12px",
-                      color: "var(--text-primary)",
-                      fontSize: 13,
-                      fontWeight: 600,
+                      border: `1px solid ${isOpen ? "var(--accent)" : "var(--border)"}`,
+                      borderRadius: 10,
+                      background: "var(--bg-elevated)",
+                      overflow: "hidden",
+                      transition: "border-color 0.15s",
                     }}
                   >
-                    {mockTopics.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.courseCode} - {t.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                    Difficulty Mode:
-                  </label>
-                  <select
-                    value={difficultyMode}
-                    onChange={(e) => setDifficultyMode(e.target.value as any)}
-                    style={{
-                      width: "100%",
-                      background: "var(--bg-surface)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 8,
-                      padding: "8px 12px",
-                      color: "var(--text-primary)",
-                      fontSize: 13,
-                      fontWeight: 600,
-                    }}
-                  >
-                    <option value="mixed">🔀 Mixed Difficulties (Random Balance)</option>
-                    <option value="Easy">🟢 Easy Only</option>
-                    <option value="Medium">🟡 Medium Only</option>
-                    <option value="Hard">🔴 Hard Only</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STRATEGY 3: CUSTOM MANUAL PICK */}
-          {strategy === "manual" && (
-            <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 10 }}>
-                Browse & Check Off Questions from Bank:
-              </label>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
-                {availableBankQuestions.map((q) => {
-                  const isChecked = manuallySelectedIds.includes(q.id);
-                  return (
-                    <label
-                      key={q.id}
+                    {/* Accordion Header */}
+                    <div
+                      onClick={() => toggleTopicAccordion(topic.id)}
                       style={{
+                        padding: "14px 18px",
                         display: "flex",
+                        justifyContent: "space-between",
                         alignItems: "center",
-                        gap: 10,
-                        padding: "8px 12px",
-                        borderRadius: 8,
-                        background: isChecked ? "var(--status-active-bg)" : "var(--bg-surface)",
-                        border: `1px solid ${isChecked ? "var(--status-active)" : "var(--border)"}`,
                         cursor: "pointer",
-                        fontSize: 13,
+                        background: isOpen ? "var(--accent-muted)" : "transparent",
                       }}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleManualQuestion(q.id)}
-                        style={{ accentColor: "var(--status-active)" }}
-                      />
-                      <span style={{ flex: 1, fontWeight: 500, color: "var(--text-primary)" }}>{q.prompt}</span>
-                      <Badge variant={q.difficulty === "Easy" ? "active" : q.difficulty === "Medium" ? "warning" : "danger"} size="sm">
-                        {q.difficulty} · {q.points}pts
-                      </Badge>
-                    </label>
-                  );
-                })}
-              </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <BookOpen size={16} style={{ color: "var(--accent-light)" }} />
+                        <div>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>
+                            {topic.title}
+                          </span>
+                          <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 8 }}>
+                            ({topic.courseCode || "CS 101"})
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        {topicStagedCount > 0 && (
+                          <Badge variant="active" size="sm">
+                            {topicStagedCount} checked
+                          </Badge>
+                        )}
+                        <Badge variant="muted" size="sm">
+                          {topicQuestions.length} questions
+                        </Badge>
+                        {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </div>
+                    </div>
+
+                    {/* Accordion Content (Questions under topic) */}
+                    {isOpen && (
+                      <div style={{ padding: "16px 18px", borderTop: "1px solid var(--border)", background: "var(--bg-surface)" }}>
+                        {/* Topic Controls: Search & Difficulty Filter Chips */}
+                        <div style={{ display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+                          <div style={{ display: "flex", gap: 4, background: "var(--bg-elevated)", padding: 3, borderRadius: 8, border: "1px solid var(--border)" }}>
+                            {["all", "Easy", "Medium", "Hard"].map((diff) => (
+                              <button
+                                key={diff}
+                                onClick={() =>
+                                  setTopicDifficultyFilter((prev) => ({ ...prev, [topic.id]: diff }))
+                                }
+                                style={{
+                                  padding: "4px 10px",
+                                  borderRadius: 6,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  background: currentDiff === diff ? "var(--accent)" : "transparent",
+                                  color: currentDiff === diff ? "#fff" : "var(--text-secondary)",
+                                  border: "none",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {diff === "all" ? "All Difficulty" : diff}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+                            <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                            <input
+                              value={currentSearch}
+                              onChange={(e) => setTopicSearch((prev) => ({ ...prev, [topic.id]: e.target.value }))}
+                              placeholder="Filter questions in topic..."
+                              style={{
+                                width: "100%",
+                                background: "var(--bg-elevated)",
+                                border: "1px solid var(--border)",
+                                borderRadius: 8,
+                                padding: "6px 10px 6px 30px",
+                                fontSize: 12,
+                                color: "var(--text-primary)",
+                                outline: "none",
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Questions Checkbox List */}
+                        {filteredTopicQuestions.length > 0 ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {filteredTopicQuestions.map((q) => {
+                              const isChecked = stagedQuestionIds.includes(q.id);
+                              const isAlreadyAdded = assignedQuestions.some((aq) => aq.id === q.id);
+
+                              return (
+                                <label
+                                  key={q.id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "flex-start",
+                                    gap: 12,
+                                    padding: "10px 14px",
+                                    borderRadius: 8,
+                                    background: isChecked ? "var(--accent-muted)" : "var(--bg-elevated)",
+                                    border: `1px solid ${isChecked ? "var(--accent)" : "var(--border)"}`,
+                                    cursor: "pointer",
+                                    transition: "all 0.15s",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => toggleStageQuestion(q.id)}
+                                    style={{ marginTop: 3, accentColor: "var(--accent)" }}
+                                  />
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>
+                                      {q.prompt}
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                      <Badge variant="muted" size="sm">{q.type}</Badge>
+                                      <Badge
+                                        variant={q.difficulty === "Easy" ? "active" : q.difficulty === "Medium" ? "warning" : "danger"}
+                                        size="sm"
+                                      >
+                                        {q.difficulty}
+                                      </Badge>
+                                      <span style={{ fontSize: 11, color: "var(--accent-light)", fontWeight: 700 }}>
+                                        {q.points} pts
+                                      </span>
+                                      {isAlreadyAdded && (
+                                        <span style={{ fontSize: 11, color: "var(--status-active)", display: "flex", alignItems: "center", gap: 3 }}>
+                                          <CheckCircle2 size={12} /> Added to Assignment
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: "var(--text-muted)", padding: 12, textAlign: "center" }}>
+                            No questions matching current filters in this topic.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          )}
 
-          {/* Selected Questions Preview List */}
-          <div style={{ marginTop: 16 }}>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>
-              Questions Included in this Assignment ({selectedQuestions.length}):
-            </label>
+            {/* FIXED/PROMINENT "ADD AND SAVE QUESTIONS" BUTTON */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-elevated)", border: "1px solid var(--border)", padding: "12px 18px", borderRadius: 10 }}>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
+                {stagedQuestionIds.length} question(s) checked across topics
+              </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {selectedQuestions.map((q, idx) => (
-                <div
-                  key={q.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "10px 14px",
-                    background: "var(--bg-elevated)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 8,
-                    fontSize: 13,
-                  }}
-                >
-                  <div>
-                    <span style={{ fontWeight: 700, color: "var(--accent-light)", marginRight: 8 }}>Q{idx + 1}.</span>
-                    <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{q.prompt}</span>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Badge variant={q.difficulty === "Easy" ? "active" : q.difficulty === "Medium" ? "warning" : "danger"} size="sm">
-                      {q.difficulty}
-                    </Badge>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>{q.points} pts</span>
-                  </div>
-                </div>
-              ))}
+              <button
+                onClick={handleAddAndSaveQuestions}
+                disabled={stagedQuestionIds.length === 0}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "9px 18px",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  background: stagedQuestionIds.length > 0 ? "linear-gradient(135deg, #10B981, #059669)" : "var(--bg-surface)",
+                  color: stagedQuestionIds.length > 0 ? "#fff" : "var(--text-muted)",
+                  border: "none",
+                  cursor: stagedQuestionIds.length > 0 ? "pointer" : "not-allowed",
+                  boxShadow: stagedQuestionIds.length > 0 ? "0 4px 12px rgba(16, 185, 129, 0.3)" : "none",
+                }}
+              >
+                <Plus size={15} /> Add and Save Questions to Assignment
+              </button>
             </div>
           </div>
+
+          {/* 3. ASSIGNED QUESTIONS SUMMARY LIST */}
+          <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                <CheckCircle2 size={16} style={{ color: "var(--status-active)" }} /> Added Questions ({assignedQuestions.length})
+              </h3>
+              <Badge variant="accent" size="md">
+                Total Exam Points: {totalPoints} pts
+              </Badge>
+            </div>
+
+            {assignedQuestions.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {assignedQuestions.map((q, idx) => (
+                  <div
+                    key={q.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      padding: "10px 14px",
+                      background: "var(--bg-elevated)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", width: 20 }}>
+                        #{idx + 1}
+                      </span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                          {q.prompt}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 8, marginTop: 2 }}>
+                          <span>{q.topicTitle || "Topic Concept"}</span> · 
+                          <span style={{ color: "var(--accent-light)", fontWeight: 700 }}>{q.points} pts</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleRemoveAssignedQuestion(q.id)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--status-danger)",
+                        cursor: "pointer",
+                        padding: 6,
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: "center", padding: 24, border: "2px dashed var(--border)", borderRadius: 10, color: "var(--text-muted)", fontSize: 13 }}>
+                No questions added yet. Expand topics above, check questions, and click "Add and Save Questions".
+              </div>
+            )}
+          </div>
+
         </div>
 
-        {/* SECTION 3: SCHEDULE & ACCESSIBILITY SETTINGS */}
-        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-            <Calendar size={18} style={{ color: "var(--accent-light)" }} /> 3. Schedule & Accessibility Settings
-          </h2>
+        {/* RIGHT COLUMN: STICKY SIDEBAR (SCHEDULE, ACCESSIBILITY & PROCTORING) */}
+        <div style={{ position: "sticky", top: 24, display: "flex", flexDirection: "column", gap: 20 }}>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-            <div>
-              <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Start Date & Time</label>
+          {/* SCHEDULE & ACCESSIBILITY SETTINGS */}
+          <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 20 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+              <Clock size={16} style={{ color: "var(--accent-light)" }} /> Schedule & Accessibility Settings
+            </h3>
+
+            {/* Scheduled Start */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                Scheduled Start Time
+              </label>
               <input
                 type="datetime-local"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text-primary)", fontSize: 13 }}
+                style={{
+                  width: "100%",
+                  background: "var(--bg-elevated)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  color: "var(--text-primary)",
+                  fontSize: 12,
+                  outline: "none",
+                }}
               />
             </div>
 
-            <div>
-              <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Expiration Deadline</label>
+            {/* Due Date */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                Due / Expiry Time
+              </label>
               <input
                 type="datetime-local"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text-primary)", fontSize: 13 }}
+                style={{
+                  width: "100%",
+                  background: "var(--bg-elevated)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  color: "var(--text-primary)",
+                  fontSize: 12,
+                  outline: "none",
+                }}
               />
             </div>
 
-            <div>
-              <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Time Limit (Minutes)</label>
-              <input
-                type="number"
-                value={timeLimit}
-                onChange={(e) => setTimeLimit(Number(e.target.value))}
-                style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text-primary)", fontSize: 13 }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Max Attempts</label>
-              <input
-                type="number"
-                value={maxAttempts}
-                onChange={(e) => setMaxAttempts(Number(e.target.value))}
-                style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text-primary)", fontSize: 13 }}
-              />
-            </div>
-          </div>
-
-          {/* Access Control Selection */}
-          <div>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
-              Candidate Access Control & Enrollment Mode
-            </label>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              {[
-                { id: "class", label: "👥 Enrolled Classes Only", desc: "Only students assigned to this course group can access" },
-                { id: "password", label: "🔑 Access Key / Password", desc: "Students enter a secret code to start" },
-                { id: "public", label: "🌐 Open Public Link", desc: "Anyone with link can take assessment" },
-              ].map((acc) => (
-                <button
-                  key={acc.id}
-                  onClick={() => setAccessMode(acc.id as any)}
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-start",
-                    gap: 4,
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    background: accessMode === acc.id ? "var(--accent-muted)" : "var(--bg-elevated)",
-                    border: `1px solid ${accessMode === acc.id ? "var(--accent)" : "var(--border)"}`,
-                    cursor: "pointer",
-                    textAlign: "left",
-                  }}
-                >
-                  <span style={{ fontSize: 12, fontWeight: 700, color: accessMode === acc.id ? "var(--accent-light)" : "var(--text-primary)" }}>
-                    {acc.label}
-                  </span>
-                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{acc.desc}</span>
-                </button>
-              ))}
-            </div>
-
-            {accessMode === "password" && (
-              <div style={{ marginTop: 12 }}>
+            {/* Duration & Pass Mark */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                  Time Limit (min)
+                </label>
                 <input
-                  type="text"
-                  placeholder="Set Access Key Password (e.g. EXAM-2026-KEY)"
-                  value={accessPassword}
-                  onChange={(e) => setAccessPassword(e.target.value)}
-                  style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text-primary)", fontSize: 13 }}
+                  type="number"
+                  min={5}
+                  max={300}
+                  value={timeLimit}
+                  onChange={(e) => setTimeLimit(Number(e.target.value))}
+                  style={{
+                    width: "100%",
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    outline: "none",
+                  }}
                 />
               </div>
-            )}
-          </div>
-        </div>
 
-        {/* SECTION 4: PROCTORING & ANTI-CHEATING CONTROLS (RESTORED & ENHANCED) */}
-        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
-            <Shield size={18} style={{ color: "var(--status-warn)" }} /> 4. Proctoring & Anti-Cheating Security Controls
-          </h2>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-            Enable automated camera surveillance, focus tracking, and anti-copy security restrictions during student execution.
-          </p>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {[
-              {
-                id: "enableWebcam",
-                title: "📷 Webcam Video Monitoring",
-                desc: "Enforces continuous live camera check and periodic snapshots during assessment",
-                icon: <Camera size={18} style={{ color: "var(--accent-light)" }} />,
-              },
-              {
-                id: "enableMic",
-                title: "🎙️ Microphone Audio Recording",
-                desc: "Monitors and flags background ambient noise or speech during execution",
-                icon: <Mic size={18} style={{ color: "var(--accent-light)" }} />,
-              },
-              {
-                id: "detectTabSwitch",
-                title: "🔒 Tab Switch & Focus Detection",
-                desc: "Detects when student leaves browser tab or opens external windows",
-                icon: <MonitorOff size={18} style={{ color: "var(--status-danger)" }} />,
-              },
-              {
-                id: "shuffleQuestions",
-                title: "🔀 Randomize Question Order",
-                desc: "Shuffles question sequence independently for each candidate",
-                icon: <Shuffle size={18} style={{ color: "var(--accent-light)" }} />,
-              },
-              {
-                id: "shuffleOptions",
-                title: "🔀 Randomize Option Order",
-                desc: "Shuffles multiple choice answer choices per question",
-                icon: <Shuffle size={18} style={{ color: "var(--accent-light)" }} />,
-              },
-              {
-                id: "disableCopyPaste",
-                title: "🚫 Disable Copy, Paste & Right Click",
-                desc: "Blocks clipboard operations and context menus on assessment screens",
-                icon: <Copy size={18} style={{ color: "var(--status-danger)" }} />,
-              },
-            ].map((p) => {
-              const isEnabled = (proctoring as any)[p.id];
-              return (
-                <div
-                  key={p.id}
-                  onClick={() => setProctoring({ ...proctoring, [p.id]: !isEnabled })}
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                  Pass Mark (%)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={passMark}
+                  onChange={(e) => setPassMark(Number(e.target.value))}
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 12,
-                    padding: "14px 16px",
-                    borderRadius: 10,
-                    background: isEnabled ? "var(--bg-elevated)" : "var(--bg-surface)",
-                    border: `1px solid ${isEnabled ? "var(--accent)" : "var(--border)"}`,
-                    cursor: "pointer",
-                    transition: "all 0.15s",
+                    width: "100%",
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    color: "var(--text-primary)",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    outline: "none",
                   }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isEnabled}
-                    onChange={() => {}}
-                    style={{ accentColor: "var(--accent)", marginTop: 2, width: 16, height: 16 }}
-                  />
-                  <div>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", display: "block" }}>
-                      {p.title}
-                    </span>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, display: "block" }}>
-                      {p.desc}
-                    </span>
+                />
+              </div>
+            </div>
+
+            {/* Access Mode Selector */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                Access Mode & Security Key
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
+                {[
+                  { id: "class", label: "Class", icon: <Users size={12} /> },
+                  { id: "password", label: "Password", icon: <Key size={12} /> },
+                  { id: "public", label: "Public", icon: <Globe size={12} /> },
+                ].map((mode) => (
+                  <button
+                    key={mode.id}
+                    onClick={() => setAccessMode(mode.id as any)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 4,
+                      padding: "7px 4px",
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      background: accessMode === mode.id ? "var(--accent)" : "var(--bg-elevated)",
+                      color: accessMode === mode.id ? "#fff" : "var(--text-secondary)",
+                      border: `1px solid ${accessMode === mode.id ? "var(--accent)" : "var(--border)"}`,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {mode.icon} {mode.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Conditional Password Input */}
+              {accessMode === "password" && (
+                <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--accent)", padding: 10, borderRadius: 8 }}>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--accent-light)", marginBottom: 4 }}>
+                    Access Key / Password required to attempt:
+                  </label>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <input
+                      value={accessPassword}
+                      onChange={(e) => setAccessPassword(e.target.value)}
+                      style={{
+                        flex: 1,
+                        background: "var(--bg-surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        padding: "6px 10px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                        letterSpacing: 0.5,
+                      }}
+                    />
+                    <button
+                      onClick={generateAccessKey}
+                      style={{
+                        padding: "6px 8px",
+                        fontSize: 11,
+                        background: "var(--bg-surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      Gen
+                    </button>
+                    <button
+                      onClick={copyAccessPassword}
+                      style={{
+                        padding: "6px 8px",
+                        fontSize: 11,
+                        background: "var(--accent)",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {passwordCopied ? "✓" : <Copy size={12} />}
+                    </button>
                   </div>
                 </div>
-              );
-            })}
+              )}
+            </div>
           </div>
+
+          {/* PROCTORING & ANTI-CHEATING CONTROLS */}
+          <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 20 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+              <Shield size={16} style={{ color: "var(--status-active)" }} /> Proctoring Security Controls
+            </h3>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                { key: "enableWebcam", label: "Camera Video Monitoring", desc: "Record webcam & detect face presence" },
+                { key: "enableMic", label: "Microphone Audio Detection", desc: "Detect background talking & noise" },
+                { key: "detectTabSwitch", label: "Tab Switch Detection", desc: "Flag when candidate leaves browser tab" },
+                { key: "shuffleQuestions", label: "Shuffle Question Order", desc: "Randomize question list order" },
+                { key: "shuffleOptions", label: "Shuffle Option Choices", desc: "Randomize ABCD answer choices" },
+                { key: "disableCopyPaste", label: "Disable Copy & Paste", desc: "Block clipboard copy, paste & context menu" },
+              ].map((item) => {
+                const val = (proctoring as any)[item.key];
+                return (
+                  <label
+                    key={item.key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                      background: "var(--bg-elevated)",
+                      border: "1px solid var(--border)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{item.label}</div>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{item.desc}</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={val}
+                      onChange={(e) => setProctoring({ ...proctoring, [item.key]: e.target.checked })}
+                      style={{ accentColor: "var(--status-active)", width: 16, height: 16 }}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* STICKY PUBLISH ACTION BUTTON */}
+          <button
+            onClick={handlePublishAssignment}
+            disabled={publishing}
+            style={{
+              width: "100%",
+              padding: "14px",
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 800,
+              background: "linear-gradient(135deg, #6366F1, #8B5CF6)",
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+              boxShadow: "0 6px 20px rgba(99, 102, 241, 0.4)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+            }}
+          >
+            <Check size={18} /> {publishing ? "Publishing to DB..." : "Publish & Save Assignment"}
+          </button>
         </div>
+
       </div>
     </div>
   );
@@ -873,7 +986,7 @@ function CreateAssignmentContent() {
 
 export default function CreateAssignmentPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>Loading Assignment Creator...</div>}>
+    <Suspense fallback={<div style={{ padding: 24, color: "var(--text-muted)" }}>Loading assignment creator...</div>}>
       <CreateAssignmentContent />
     </Suspense>
   );

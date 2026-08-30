@@ -1,197 +1,224 @@
--- =========================================================
--- EVALIA HUMAN + AI ASSESSMENT PLATFORM - COMPLETE SUPABASE DDL SCHEMA
--- Covers ALL backend features: Users, Lecturers, Students, Classes, Roster, 
--- Question Bank, OpenAI Generated Questions, Assignments, Submissions & AI Proctoring Audit.
--- =========================================================
+BEGIN;
 
--- 1. DROP EXISTING TABLES & ENUMS (FOR CLEAN FRESH INSTALL)
-DROP TABLE IF EXISTS ai_analytics_cache CASCADE;
-DROP TABLE IF EXISTS lecturer_feedback_notes CASCADE;
-DROP TABLE IF EXISTS proctoring_logs CASCADE;
-DROP TABLE IF EXISTS assessment_attempts CASCADE;
-DROP TABLE IF EXISTS assignment_questions CASCADE;
-DROP TABLE IF EXISTS assignments CASCADE;
-DROP TABLE IF EXISTS questions CASCADE;
-DROP TABLE IF EXISTS topics CASCADE;
-DROP TABLE IF EXISTS class_enrollments CASCADE;
-DROP TABLE IF EXISTS classes CASCADE;
-DROP TABLE IF EXISTS student_profiles CASCADE;
-DROP TABLE IF EXISTS lecturer_profiles CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
+ALTER TABLE lecturer_feedback_notes
+ADD COLUMN IF NOT EXISTS created_by UUID;
 
-DROP TYPE IF EXISTS user_role CASCADE;
-DROP TYPE IF EXISTS question_difficulty CASCADE;
-DROP TYPE IF EXISTS attempt_status CASCADE;
+UPDATE lecturer_feedback_notes n
+SET created_by = c.lecturer_id
+FROM classes c
+WHERE n.class_id = c.id
+  AND n.created_by IS NULL;
 
--- 2. ENUM DEFINITIONS
-CREATE TYPE user_role AS ENUM ('lecturer', 'student', 'admin');
-CREATE TYPE question_difficulty AS ENUM ('easy', 'medium', 'hard');
-CREATE TYPE attempt_status AS ENUM ('in_progress', 'completed', 'submitted', 'flagged');
+UPDATE questions q
+SET created_by = t.lecturer_id
+FROM topics t
+WHERE q.topic_id = t.id
+  AND q.created_by IS NULL
+  AND t.lecturer_id IS NOT NULL;
 
--- 3. USERS TABLE
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255), -- NULL if signed up via Google OAuth
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    phone VARCHAR(50),
-    role user_role NOT NULL DEFAULT 'student',
-    google_id VARCHAR(255) UNIQUE,
-    avatar_url TEXT,
-    is_profile_complete BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM lecturer_profiles lp
+        LEFT JOIN users u ON u.id = lp.user_id
+        WHERE u.id IS NULL OR u.role <> 'lecturer'
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: lecturer_profiles must reference lecturer users';
+    END IF;
 
--- 4. LECTURER PROFILES TABLE
-CREATE TABLE lecturer_profiles (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    department VARCHAR(150),
-    institution VARCHAR(150),
-    title VARCHAR(50) DEFAULT 'Lecturer',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+    IF EXISTS (
+        SELECT 1 FROM student_profiles sp
+        LEFT JOIN users u ON u.id = sp.user_id
+        WHERE u.id IS NULL OR u.role <> 'student'
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: student_profiles must reference student users';
+    END IF;
 
--- 5. STUDENT PROFILES TABLE (Includes Index Number & Course)
-CREATE TABLE student_profiles (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    index_number VARCHAR(100) UNIQUE NOT NULL,
-    course_code VARCHAR(50),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+    IF EXISTS (
+        SELECT 1 FROM classes c
+        LEFT JOIN users u ON u.id = c.lecturer_id
+        WHERE u.id IS NULL OR u.role NOT IN ('lecturer', 'admin')
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: classes must reference lecturer/admin users';
+    END IF;
 
--- 6. CLASSES TABLE (Cohorts & Grade Scale Settings)
-CREATE TABLE classes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    lecturer_id UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    course_code VARCHAR(50) NOT NULL,
-    join_code VARCHAR(20) UNIQUE NOT NULL,
-    department VARCHAR(150),
-    assessment_weighting NUMERIC(5,2) DEFAULT 30.00,
-    pass_threshold NUMERIC(5,2) DEFAULT 60.00,
-    grade_scale JSONB DEFAULT '{"aPlus": 90, "a": 80, "b": 70, "c": 60, "d": 50}'::jsonb,
-    is_enrollment_open BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+    IF EXISTS (
+        SELECT 1 FROM class_enrollments ce
+        LEFT JOIN classes c ON c.id = ce.class_id
+        LEFT JOIN users u ON u.id = ce.student_id
+        WHERE c.id IS NULL OR u.id IS NULL OR u.role <> 'student'
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: class_enrollments must reference existing classes and student users';
+    END IF;
 
--- 7. CLASS ENROLLMENTS TABLE (Subscribed Roster Students)
-CREATE TABLE class_enrollments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    class_id UUID NOT NULL REFERENCES classes(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    student_id UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(class_id, student_id)
-);
+    IF EXISTS (
+        SELECT 1 FROM topics t
+        JOIN classes c ON c.id = t.class_id
+        LEFT JOIN users u ON u.id = t.lecturer_id
+        WHERE t.lecturer_id IS NOT NULL
+          AND t.lecturer_id <> c.lecturer_id
+          AND (u.id IS NULL OR u.role <> 'admin')
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: topics cannot cross class lecturers';
+    END IF;
 
--- 8. TOPICS TABLE (Question Bank Categories)
-CREATE TABLE topics (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    lecturer_id UUID REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    class_id UUID REFERENCES classes(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    title VARCHAR(255) GENERATED ALWAYS AS (name) STORED,
-    course_code VARCHAR(50),
-    course_title VARCHAR(255),
-    description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+    IF EXISTS (
+        SELECT 1 FROM questions q
+        LEFT JOIN topics t ON t.id = q.topic_id
+        LEFT JOIN users u ON u.id = q.created_by
+        WHERE q.created_by IS NULL
+           OR u.id IS NULL
+           OR u.role NOT IN ('lecturer', 'admin')
+           OR (
+                t.lecturer_id IS NOT NULL
+                AND q.created_by <> t.lecturer_id
+                AND u.role <> 'admin'
+           )
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: questions require valid lecturer/admin owners and cannot cross topic owners';
+    END IF;
 
--- 9. QUESTIONS TABLE (Manual & OpenAI ChatGPT Generated Questions)
-CREATE TABLE questions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    topic_id UUID REFERENCES topics(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    question_text TEXT NOT NULL,
-    type VARCHAR(50) DEFAULT 'MCQ',
-    options JSONB NOT NULL, -- ["Option A", "Option B", "Option C", "Option D"]
-    correct_answer TEXT NOT NULL,
-    difficulty question_difficulty DEFAULT 'medium',
-    points NUMERIC(6,2) DEFAULT 2.00,
-    explanation TEXT,
-    created_by UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+    IF EXISTS (
+        SELECT 1 FROM assignments a
+        JOIN classes c ON c.id = a.class_id
+        LEFT JOIN users u ON u.id = a.created_by
+        WHERE a.created_by IS NOT NULL
+          AND a.created_by <> c.lecturer_id
+          AND (u.id IS NULL OR u.role <> 'admin')
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: assignments cannot cross class owners';
+    END IF;
 
--- 10. ASSIGNMENTS TABLE (Exams, Quizzes, Security Controls & Submissions)
-CREATE TABLE assignments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    class_id UUID REFERENCES classes(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    instructions TEXT,
-    type VARCHAR(50) DEFAULT 'Mixed MCQ & Written',
-    total_points NUMERIC(6,2) DEFAULT 100.00,
-    pass_mark NUMERIC(6,2) DEFAULT 70.00,
-    duration_minutes INT DEFAULT 60,
-    access_mode VARCHAR(50) DEFAULT 'class', -- 'class', 'password', 'public'
-    access_password VARCHAR(255),
-    proctoring_enabled BOOLEAN DEFAULT TRUE,
-    enable_webcam BOOLEAN DEFAULT TRUE,
-    enable_mic BOOLEAN DEFAULT FALSE,
-    detect_tab_switch BOOLEAN DEFAULT TRUE,
-    shuffle_questions BOOLEAN DEFAULT TRUE,
-    shuffle_options BOOLEAN DEFAULT TRUE,
-    disable_copy_paste BOOLEAN DEFAULT TRUE,
-    proctoring_config JSONB DEFAULT '{"enableWebcam": true, "enableMic": false, "detectTabSwitch": true, "shuffleQuestions": true, "shuffleOptions": true, "disableCopyPaste": true}'::jsonb,
-    submissions INT DEFAULT 0,
-    submitted INT DEFAULT 0,
-    enrolled INT DEFAULT 0,
-    pass_rate VARCHAR(20) DEFAULT '0%',
-    scheduled_start TIMESTAMP WITH TIME ZONE,
-    scheduled_end TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(50) DEFAULT 'active',
-    created_by UUID REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+    IF EXISTS (
+        SELECT 1 FROM assignment_questions aq
+        JOIN assignments a ON a.id = aq.assignment_id
+        JOIN questions q ON q.id = aq.question_id
+        LEFT JOIN topics t ON t.id = q.topic_id
+        LEFT JOIN classes c ON c.id = a.class_id
+        LEFT JOIN users au ON au.id = a.created_by
+        WHERE (a.class_id IS NOT NULL AND t.class_id IS NOT NULL AND a.class_id <> t.class_id)
+           OR (
+                a.created_by IS NOT NULL
+                AND q.created_by IS NOT NULL
+                AND q.created_by <> a.created_by
+                AND COALESCE(q.created_by <> c.lecturer_id, TRUE)
+                AND COALESCE(t.lecturer_id <> a.created_by, TRUE)
+                AND COALESCE(au.role <> 'admin', TRUE)
+           )
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: assignment_questions cannot cross class or owner scope';
+    END IF;
 
--- 11. ASSIGNMENT QUESTIONS JOIN TABLE
-CREATE TABLE assignment_questions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    assignment_id UUID NOT NULL REFERENCES assignments(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    question_id UUID NOT NULL REFERENCES questions(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    question_order INT DEFAULT 1,
-    UNIQUE(assignment_id, question_id)
-);
+    IF EXISTS (
+        SELECT 1 FROM assessment_attempts aa
+        JOIN assignments a ON a.id = aa.assignment_id
+        LEFT JOIN class_enrollments ce
+          ON ce.class_id = a.class_id
+         AND ce.student_id = aa.student_id
+        LEFT JOIN users u ON u.id = aa.student_id
+        WHERE u.id IS NULL
+           OR u.role <> 'student'
+           OR (a.class_id IS NOT NULL AND ce.id IS NULL)
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: assessment_attempts require enrolled student users';
+    END IF;
 
--- 12. ASSESSMENT ATTEMPTS TABLE (Student Submissions & Test Engine)
-CREATE TABLE assessment_attempts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    assignment_id UUID NOT NULL REFERENCES assignments(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    student_id UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    earned_score NUMERIC(6,2) DEFAULT 0.00,
-    total_points NUMERIC(6,2) DEFAULT 100.00,
-    percentage NUMERIC(5,2) DEFAULT 0.00,
-    status attempt_status DEFAULT 'in_progress',
-    time_spent_seconds INT DEFAULT 0,
-    answers JSONB DEFAULT '{}'::jsonb,
-    started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    submitted_at TIMESTAMP WITH TIME ZONE
-);
+    IF EXISTS (
+        SELECT assignment_id, student_id
+        FROM assessment_attempts
+        WHERE status = 'in_progress'
+        GROUP BY assignment_id, student_id
+        HAVING COUNT(*) > 1
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: duplicate active assessment attempts exist';
+    END IF;
 
--- 13. PROCTORING LOGS TABLE (AI Proctoring Audit Events)
-CREATE TABLE proctoring_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    attempt_id UUID NOT NULL REFERENCES assessment_attempts(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    event_type VARCHAR(100) NOT NULL, -- 'tab_switch', 'secondary_face_detected', 'camera_off'
-    severity VARCHAR(50) DEFAULT 'medium',
-    metadata JSONB DEFAULT '{}'::jsonb,
-    logged_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+    IF EXISTS (
+        SELECT 1 FROM lecturer_feedback_notes n
+        JOIN classes c ON c.id = n.class_id
+        LEFT JOIN class_enrollments ce
+          ON ce.class_id = n.class_id
+         AND ce.student_id = n.student_id
+        LEFT JOIN users s ON s.id = n.student_id
+        LEFT JOIN users a ON a.id = n.created_by
+        WHERE n.created_by IS NULL
+           OR s.id IS NULL
+           OR s.role <> 'student'
+           OR ce.id IS NULL
+           OR a.id IS NULL
+           OR a.role NOT IN ('lecturer', 'admin')
+           OR (a.role <> 'admin' AND n.created_by <> c.lecturer_id)
+    ) THEN
+        RAISE EXCEPTION 'preflight failed: lecturer_feedback_notes require enrolled students and lecturer/admin authors';
+    END IF;
+END $$;
 
--- 14. LECTURER FEEDBACK NOTES TABLE (Persisted Student Feedback)
-CREATE TABLE lecturer_feedback_notes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    class_id UUID NOT NULL REFERENCES classes(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    student_id UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    created_by UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-    note TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+ALTER TABLE lecturer_feedback_notes
+ALTER COLUMN created_by SET NOT NULL;
 
--- 15. RELATIONSHIP INTEGRITY GUARDS
+ALTER TABLE questions
+ALTER COLUMN created_by SET NOT NULL;
+
+CREATE OR REPLACE FUNCTION evalia_replace_fk(
+    p_table REGCLASS,
+    p_column TEXT,
+    p_ref_table REGCLASS,
+    p_constraint TEXT,
+    p_ref_column TEXT,
+    p_on_delete TEXT
+) RETURNS VOID AS $$
+DECLARE
+    existing_constraint TEXT;
+BEGIN
+    SELECT c.conname INTO existing_constraint
+    FROM pg_constraint c
+    JOIN pg_attribute a
+      ON a.attrelid = c.conrelid
+     AND a.attnum = ANY(c.conkey)
+    WHERE c.contype = 'f'
+      AND c.conrelid = p_table
+      AND c.confrelid = p_ref_table
+      AND a.attname = p_column
+    LIMIT 1;
+
+    IF existing_constraint IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', p_table, existing_constraint);
+    END IF;
+
+    EXECUTE format(
+        'ALTER TABLE %s ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES %s(%I) ON UPDATE CASCADE ON DELETE %s',
+        p_table,
+        p_constraint,
+        p_column,
+        p_ref_table,
+        p_ref_column,
+        p_on_delete
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT evalia_replace_fk('lecturer_profiles', 'user_id', 'users', 'lecturer_profiles_user_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('student_profiles', 'user_id', 'users', 'student_profiles_user_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('classes', 'lecturer_id', 'users', 'classes_lecturer_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('class_enrollments', 'class_id', 'classes', 'class_enrollments_class_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('class_enrollments', 'student_id', 'users', 'class_enrollments_student_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('topics', 'lecturer_id', 'users', 'topics_lecturer_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('topics', 'class_id', 'classes', 'topics_class_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('questions', 'topic_id', 'topics', 'questions_topic_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('questions', 'created_by', 'users', 'questions_created_by_fkey', 'id', 'RESTRICT');
+SELECT evalia_replace_fk('assignments', 'class_id', 'classes', 'assignments_class_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('assignments', 'created_by', 'users', 'assignments_created_by_fkey', 'id', 'SET NULL');
+SELECT evalia_replace_fk('assignment_questions', 'assignment_id', 'assignments', 'assignment_questions_assignment_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('assignment_questions', 'question_id', 'questions', 'assignment_questions_question_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('assessment_attempts', 'assignment_id', 'assignments', 'assessment_attempts_assignment_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('assessment_attempts', 'student_id', 'users', 'assessment_attempts_student_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('proctoring_logs', 'attempt_id', 'assessment_attempts', 'proctoring_logs_attempt_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('lecturer_feedback_notes', 'class_id', 'classes', 'lecturer_feedback_notes_class_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('lecturer_feedback_notes', 'student_id', 'users', 'lecturer_feedback_notes_student_id_fkey', 'id', 'CASCADE');
+SELECT evalia_replace_fk('lecturer_feedback_notes', 'created_by', 'users', 'lecturer_feedback_notes_created_by_fkey', 'id', 'RESTRICT');
+
+DROP FUNCTION evalia_replace_fk(REGCLASS, TEXT, REGCLASS, TEXT, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION assert_evalia_user_role(
     p_user_id UUID,
     p_allowed_roles user_role[],
@@ -493,79 +520,73 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_lecturer_profile_user_role ON lecturer_profiles;
 CREATE TRIGGER trg_lecturer_profile_user_role
 BEFORE INSERT OR UPDATE OF user_id ON lecturer_profiles
 FOR EACH ROW EXECUTE FUNCTION enforce_lecturer_profile_user_role();
 
+DROP TRIGGER IF EXISTS trg_user_role_lineage ON users;
 CREATE TRIGGER trg_user_role_lineage
 BEFORE UPDATE OF role ON users
 FOR EACH ROW EXECUTE FUNCTION enforce_user_role_lineage();
 
+DROP TRIGGER IF EXISTS trg_student_profile_user_role ON student_profiles;
 CREATE TRIGGER trg_student_profile_user_role
 BEFORE INSERT OR UPDATE OF user_id ON student_profiles
 FOR EACH ROW EXECUTE FUNCTION enforce_student_profile_user_role();
 
+DROP TRIGGER IF EXISTS trg_class_lecturer_role ON classes;
 CREATE TRIGGER trg_class_lecturer_role
 BEFORE INSERT OR UPDATE OF lecturer_id ON classes
 FOR EACH ROW EXECUTE FUNCTION enforce_class_lecturer_role();
 
+DROP TRIGGER IF EXISTS trg_class_enrollment_student_role ON class_enrollments;
 CREATE TRIGGER trg_class_enrollment_student_role
 BEFORE INSERT OR UPDATE OF student_id ON class_enrollments
 FOR EACH ROW EXECUTE FUNCTION enforce_class_enrollment_student_role();
 
+DROP TRIGGER IF EXISTS trg_topic_class_scope ON topics;
 CREATE TRIGGER trg_topic_class_scope
 BEFORE INSERT OR UPDATE OF lecturer_id, class_id ON topics
 FOR EACH ROW EXECUTE FUNCTION enforce_topic_class_scope();
 
+DROP TRIGGER IF EXISTS trg_question_topic_scope ON questions;
 CREATE TRIGGER trg_question_topic_scope
 BEFORE INSERT OR UPDATE OF topic_id, created_by ON questions
 FOR EACH ROW EXECUTE FUNCTION enforce_question_topic_scope();
 
+DROP TRIGGER IF EXISTS trg_assignment_class_scope ON assignments;
 CREATE TRIGGER trg_assignment_class_scope
 BEFORE INSERT OR UPDATE OF class_id, created_by ON assignments
 FOR EACH ROW EXECUTE FUNCTION enforce_assignment_class_scope();
 
+DROP TRIGGER IF EXISTS trg_assignment_question_scope ON assignment_questions;
 CREATE TRIGGER trg_assignment_question_scope
 BEFORE INSERT OR UPDATE OF assignment_id, question_id ON assignment_questions
 FOR EACH ROW EXECUTE FUNCTION enforce_assignment_question_scope();
 
+DROP TRIGGER IF EXISTS trg_attempt_student_enrollment ON assessment_attempts;
 CREATE TRIGGER trg_attempt_student_enrollment
 BEFORE INSERT OR UPDATE OF assignment_id, student_id ON assessment_attempts
 FOR EACH ROW EXECUTE FUNCTION enforce_attempt_student_enrollment();
 
+DROP TRIGGER IF EXISTS trg_feedback_note_scope ON lecturer_feedback_notes;
 CREATE TRIGGER trg_feedback_note_scope
 BEFORE INSERT OR UPDATE OF class_id, student_id, created_by ON lecturer_feedback_notes
 FOR EACH ROW EXECUTE FUNCTION enforce_feedback_note_scope();
 
--- 16. AI ANALYTICS CACHE TABLE (Cohort Insights & Remediation Plans)
-CREATE TABLE ai_analytics_cache (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    entity_type VARCHAR(50) NOT NULL, -- 'cohort_mastery', 'student_remediation', 'proctoring_audit'
-    entity_id UUID NOT NULL,
-    insights_data JSONB NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- 17. PERFORMANCE INDEXES
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_classes_lecturer ON classes(lecturer_id);
-CREATE INDEX idx_classes_join_code ON classes(join_code);
-CREATE INDEX idx_student_profiles_index_number ON student_profiles(index_number);
-CREATE INDEX idx_class_enrollments_student ON class_enrollments(student_id);
-CREATE INDEX idx_topics_class ON topics(class_id);
-CREATE INDEX idx_topics_lecturer ON topics(lecturer_id);
-CREATE INDEX idx_questions_topic ON questions(topic_id);
-CREATE INDEX idx_questions_created_by ON questions(created_by);
-CREATE INDEX idx_assignments_class ON assignments(class_id);
-CREATE INDEX idx_assignments_created_by ON assignments(created_by);
-CREATE INDEX idx_assignment_questions_order ON assignment_questions(assignment_id, question_order);
-CREATE INDEX idx_attempts_student ON assessment_attempts(student_id);
-CREATE INDEX idx_attempts_assignment ON assessment_attempts(assignment_id);
-CREATE UNIQUE INDEX uq_attempts_one_active_per_student_assignment
+CREATE INDEX IF NOT EXISTS idx_classes_lecturer ON classes(lecturer_id);
+CREATE INDEX IF NOT EXISTS idx_class_enrollments_student ON class_enrollments(student_id);
+CREATE INDEX IF NOT EXISTS idx_topics_lecturer ON topics(lecturer_id);
+CREATE INDEX IF NOT EXISTS idx_questions_created_by ON questions(created_by);
+CREATE INDEX IF NOT EXISTS idx_assignments_class ON assignments(class_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_created_by ON assignments(created_by);
+CREATE INDEX IF NOT EXISTS idx_assignment_questions_order ON assignment_questions(assignment_id, question_order);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_attempts_one_active_per_student_assignment
     ON assessment_attempts(assignment_id, student_id)
     WHERE status = 'in_progress';
-CREATE INDEX idx_proctoring_attempt ON proctoring_logs(attempt_id);
-CREATE INDEX idx_feedback_notes_student ON lecturer_feedback_notes(student_id);
-CREATE INDEX idx_feedback_notes_created_by ON lecturer_feedback_notes(created_by);
-CREATE INDEX idx_feedback_notes_class_student ON lecturer_feedback_notes(class_id, student_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_notes_created_by ON lecturer_feedback_notes(created_by);
+
+NOTIFY pgrst, 'reload schema';
+
+COMMIT;

@@ -1,5 +1,5 @@
 Task: 2 - Enforce role and resource ownership across class, assignment, report, notes, analytics, and search routes
-Date: 2026-08-29
+Date: 2026-08-30
 Workspace: C:\projects\Evalia
 
 Files changed:
@@ -8,6 +8,7 @@ Files changed:
 - backend/routes/assignmentRoutes.js
 - backend/routes/analyticsRoutes.js
 - backend/routes/searchRoutes.js
+- backend/routes/questionRoutes.js
 - backend/controllers/classController.js
 - backend/controllers/assignmentController.js
 - backend/controllers/analyticsController.js
@@ -16,11 +17,42 @@ Files changed:
 - backend/models/AssignmentModel.js
 - backend/tests/authorization.test.js
 
+Rejected verification fixes:
+1. AssignmentModel.canManageAssignment no longer returns true universally.
+   Scenario: lecturer-a requests management access to assignment-b owned by lecturer-b.
+   Invocation: npm test --prefix backend
+   Binary observable: PASS - "AssignmentModel.canManageAssignment checks creator and class lecturer ownership".
+
+2. AssignmentModel.findByIdForUser no longer delegates directly to unrestricted findById.
+   Scenario: student-a requests assignment-b from class-b while enrolled only in class-a.
+   Invocation: npm test --prefix backend
+   Binary observable: PASS - "AssignmentModel.findByIdForUser denies foreign assignments before loading details"; findById spy remains uncalled.
+
+3. AssignmentModel.getAllForStudent no longer fails open to lecturer/all assignments.
+   Scenario: student-a has zero class_enrollments.
+   Invocation: npm test --prefix backend
+   Binary observable: PASS - "AssignmentModel.getAllForStudent returns no assignments when the student has no enrollments"; assignments table query is not reached.
+
+4. ClassModel.canManageClass no longer grants every lecturer.
+   Scenario: lecturer-a requests management access to class-b without matching lecturer_id.
+   Invocation: npm test --prefix backend
+   Binary observable: PASS - "ClassModel.canManageClass checks lecturer ownership with the real model implementation".
+
+5. Question bank routes no longer expose answers to students.
+   Scenario: student-a requests GET /questions with a valid student JWT.
+   Invocation: npm test --prefix backend
+   Binary observable: PASS - "student cannot fetch question bank answers"; route returns HTTP 403 before QuestionModel.getQuestions is called.
+
+6. Student assignment detail no longer exposes peer submissions or private grading data.
+   Scenario: student-a requests GET /assignments/assignment-a and the model detail includes candidates, attempts, peer answers, proctor logs/config, access password, answer keys, submission counts, enrollment counts, pass rate, and aggregate score fields.
+   Invocation: npm test --prefix backend
+   Binary observable: PASS - "student assignment detail route strips peer submissions and private grading data"; response omits candidates, attempts, assessmentAttempts, assessment_attempts, enrolled, passRate, proctoringLogs, proctoringFlags, proctoring, proctoringConfig, proctoringEnabled, submitted, submissions, accessPassword, averageScore, correctAnswer, explanation, and option isCorrect flags.
+
 Success criteria and evidence:
 1. Explicit lecturer/admin/student policy
    Scenario: route-level role gates reject roles that are not explicitly allowed.
    Invocation: npm test --prefix backend
-   Binary observable: PASS - "students are denied lecturer/admin-only analytics and search routes"; PASS - "students cannot mutate assignments"; PASS - "authenticated routes reject missing bearer tokens".
+   Binary observable: PASS - "students are denied lecturer/admin-only analytics and search routes"; PASS - "students cannot mutate assignments"; PASS - "students cannot request assignment AI insights"; PASS - "student cannot fetch question bank answers"; PASS - "authenticated routes reject missing bearer tokens".
 
 2. Students only own enrollments, assigned work, attempts, and feedback
    Scenario: student uses their JWT to request own report, foreign report, own class detail, and foreign assignment.
@@ -28,9 +60,9 @@ Success criteria and evidence:
    Binary observable: PASS - "student can read their own class report through the ownership-aware model path"; PASS - "student report route rejects a supplied foreign student id before querying data"; PASS - "student class detail hides other roster members"; PASS - "foreign assignment reads return not found through ownership-aware lookup".
 
 3. Lecturers/admin only authorized classes/content
-   Scenario: lecturer attempts to write notes and mutate assignments outside ownership.
+   Scenario: lecturer attempts to write notes, mutate assignments, and generate assignment insights outside ownership.
    Invocation: npm test --prefix backend
-   Binary observable: PASS - "lecturer cannot write notes for a class outside their ownership"; PASS - "lecturer cannot mutate an assignment outside their ownership".
+   Binary observable: PASS - "lecturer cannot write notes for a class outside their ownership"; PASS - "lecturer cannot mutate an assignment outside their ownership"; PASS - "AssignmentModel.canManageAssignment checks creator and class lecturer ownership".
 
 4. Never trust supplied student IDs for student self-access
    Scenario: student-a sends a route param for student-b.
@@ -45,23 +77,24 @@ Success criteria and evidence:
 6. Do not expose grading keys to students
    Scenario: student-facing assignment payload sanitizer receives a question with correctAnswer, explanation, and isCorrect flags.
    Invocation: npm test --prefix backend
-   Binary observable: PASS - "student assignment details remove correct answers and correct-option flags".
+   Binary observable: PASS - "student assignment details remove correct answers and correct-option flags"; PASS - "AssignmentModel.findByIdForUser strips answer keys for an enrolled student"; PASS - "student assignment detail route strips peer submissions and private grading data".
 
 Full validation command:
 > npm test --prefix backend
 
 Result:
 - exitCode: 0
-- tests: 14
-- pass: 14
+- tests: 23
+- pass: 23
 - fail: 0
 - skipped: 0
-- duration_ms: 1555.3094
+- duration_ms: 2963.2833
 
 Live HTTP equivalent:
-- The authorization tests create an isolated Express HTTP server on 127.0.0.1 with signed JWT identities and perform real HTTP fetch calls against class, assignment, analytics, and search routes.
+- The authorization tests create isolated Express HTTP servers on 127.0.0.1 with signed JWT identities and perform real HTTP fetch calls against class, assignment, analytics, and search routes.
+- Direct model tests patch only supabaseAdmin.from with a local fake query builder; the ClassModel and AssignmentModel authorization methods run for real.
 - No remote Supabase mutations were performed.
 
 Residual risks:
 - Supabase row-level security is not configured in this slice; enforcement added here is application-layer policy.
-- Lecturer search is now scoped to lecturer classes/created content, but broader ranking and student-facing search contracts remain for later student API/UI todos.
+- Lecturer search is scoped to lecturer classes/created content, but broader ranking and student-facing search contracts remain for later student API/UI todos.

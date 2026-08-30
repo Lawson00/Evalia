@@ -1,5 +1,6 @@
 const AssignmentModel = require("../models/AssignmentModel");
 const ClassModel = require("../models/ClassModel");
+const AIService = require("../services/aiService");
 const { sendSuccess, sendError } = require("../utils/responseHandler");
 
 const getAssignments = async (req, res, next) => {
@@ -24,6 +25,10 @@ const createAssignment = async (req, res, next) => {
       durationMinutes,
       duration,
       proctoringEnabled,
+      proctoringConfig,
+      proctoring,
+      accessMode,
+      accessPassword,
       scheduledStart,
       scheduledEnd,
       dueDate,
@@ -51,6 +56,9 @@ const createAssignment = async (req, res, next) => {
       passMark: passMark || passThreshold || 70,
       durationMinutes: durationMinutes || duration || 60,
       proctoringEnabled: proctoringEnabled !== false,
+      proctoringConfig: proctoringConfig || proctoring,
+      accessMode,
+      accessPassword,
       scheduledStart,
       scheduledEnd: scheduledEnd || dueDate,
       dueDate: dueDate || scheduledEnd,
@@ -131,6 +139,32 @@ const addRemoveQuestions = async (req, res, next) => {
   }
 };
 
+const getAssignmentAIInsights = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const canManage = await AssignmentModel.canManageAssignment(id, req.user);
+    if (!canManage) {
+      return sendError(res, "Access forbidden for this assignment.", null, 403);
+    }
+
+    const assignment = await AssignmentModel.findById(id);
+    if (!assignment) {
+      return sendError(res, "Assignment not found.", null, 404);
+    }
+
+    const insights = await AIService.generateAssignmentInsights({
+      assignmentTitle: assignment.title,
+      questions: assignment.questions || [],
+      candidates: assignment.candidates || [],
+      attempts: assignment.attempts || [],
+    });
+
+    return sendSuccess(res, "Generated assignment AI performance insights.", { insights });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getAssignments,
   createAssignment,
@@ -138,4 +172,5 @@ module.exports = {
   updateAssignment,
   deleteAssignment,
   addRemoveQuestions,
+  getAssignmentAIInsights,
 };

@@ -6,6 +6,7 @@ const {
   updateAssignment,
   deleteAssignment,
   addRemoveQuestions,
+  getAssignmentAIInsights,
 } = require("../controllers/assignmentController");
 const { authenticateToken, requireRole } = require("../middlewares/authMiddleware");
 
@@ -16,6 +17,7 @@ router.use(authenticateToken);
 router.get("/", requireRole("student", "lecturer", "admin"), getAssignments);
 router.post("/", requireRole("lecturer", "admin"), createAssignment);
 router.get("/:id", requireRole("student", "lecturer", "admin"), getAssignmentById);
+router.get("/:id/ai-insights", requireRole("lecturer", "admin"), getAssignmentAIInsights);
 router.put("/:id", requireRole("lecturer", "admin"), updateAssignment);
 router.delete("/:id", requireRole("lecturer", "admin"), deleteAssignment);
 router.post("/:id/questions", requireRole("lecturer", "admin"), addRemoveQuestions);

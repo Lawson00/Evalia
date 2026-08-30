@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable, Column } from "@/components/ui/DataTable";
-import { Modal } from "@/components/ui/Modal";
 import api from "@/lib/api";
 
 export type AssignmentStatus = "draft" | "published" | "active" | "completed" | "archived";
@@ -44,7 +43,7 @@ const statusBadge = (status: AssignmentStatus) => {
 
 export default function AssignmentsPage() {
   const router = useRouter();
-  const [search, setSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<string>("all");
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
 
@@ -61,20 +60,20 @@ export default function AssignmentsPage() {
       const mapped: Assignment[] = dbItems.map((item: any) => ({
         id: item.id,
         title: item.title || "Class Assessment",
-        course: item.course || item.className || "Computer Science",
+        course: item.course || item.courseCode || "General Course",
         type: item.type || "Mixed MCQ & Written",
         status: item.status || "active",
         duration: Number(item.duration || item.durationMinutes) || 60,
         questionsCount: Number(item.questionsCount) || 0,
-        assignedTo: item.assignedTo || item.className || "Class Cohort",
+        assignedTo: item.assignedTo || item.course || "Class Cohort",
         dueDate: item.dueDate
           ? (typeof item.dueDate === "string" && item.dueDate.includes("T")
               ? new Date(item.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
               : item.dueDate)
-          : "Sep 01, 2026",
-        enrolled: Number(item.enrolled) || 45,
+          : "No expiration",
+        enrolled: Number(item.enrolled) || 0,
         submitted: Number(item.submitted) || 0,
-        passRate: item.passRate || (item.submitted ? "78%" : "—"),
+        passRate: item.passRate || (Number(item.submitted) > 0 ? "78%" : "—"),
       }));
 
       setAssignments(mapped);
@@ -101,9 +100,9 @@ export default function AssignmentsPage() {
 
   const filtered = assignments.filter((a) => {
     const matchSearch =
-      a.title.toLowerCase().includes(search.toLowerCase()) ||
-      a.course.toLowerCase().includes(search.toLowerCase()) ||
-      a.assignedTo.toLowerCase().includes(search.toLowerCase());
+      a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      a.course.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      a.assignedTo.toLowerCase().includes(searchQuery.toLowerCase());
     const matchFilter = filter === "all" || a.status === filter;
     return matchSearch && matchFilter;
   });
@@ -150,15 +149,15 @@ export default function AssignmentsPage() {
     },
     {
       key: "enrolled",
-      header: "Students Enrolled",
+      header: "Submissions",
       sortable: true,
       render: (row) => (
         <div>
           <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
-            {row.submitted} / {row.enrolled} submitted
+            {row.submitted} {row.enrolled > 0 ? `/ ${row.enrolled}` : ""} submitted
           </div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            {row.enrolled > 0 ? `${Math.round((row.submitted / row.enrolled) * 100)}% completion` : "No submissions"}
+            {row.enrolled > 0 ? `${Math.round((row.submitted / row.enrolled) * 100)}% completion` : "Database registered"}
           </div>
         </div>
       ),
@@ -337,8 +336,8 @@ export default function AssignmentsPage() {
         <div style={{ position: "relative", flex: 1, minWidth: 240 }}>
           <Search size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
           <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search assignments by title, course, or group..."
             style={{
               width: "100%",

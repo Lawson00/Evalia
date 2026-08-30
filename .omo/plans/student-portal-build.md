@@ -69,13 +69,21 @@ Your next move: Execution is approved and begins sequentially from the backend f
   QA scenarios: Node test runner proves valid schema mapping and rejects a deliberately unknown column fixture. Evidence `.omo/evidence/task-1-student-portal-build.txt`.
   Commit: N | feat(backend): align assessment schema and tests
 
-- [ ] 2. Enforce role and resource ownership across class, assignment, report, notes, analytics, and search routes
+- [x] 2. Enforce role and resource ownership across class, assignment, report, notes, analytics, and search routes
   What to do / Must NOT do: Add lecturer/admin and student resource policies; students may access only their enrollments, assigned work, attempts, and feedback; lecturers only their own classes/content. Do not rely on frontend guards or supplied student IDs.
   Parallelization: Wave 1 | Blocked by: 1 | Blocks: 3,5,6
   References: `backend/middlewares/authMiddleware.js`, all files under `backend/routes/`, `backend/models/ClassModel.js`, `backend/models/AssignmentModel.js`, `frontend/components/auth/ProtectedRoute.tsx`
   Acceptance criteria: automated route tests prove permitted access and return 403/404 for cross-user/cross-class access; admin policy is explicit.
   QA scenarios: live `curl -i` calls with two test identities prove own-resource 200 and foreign-resource denial. Evidence `.omo/evidence/task-2-student-portal-build.txt`.
   Commit: N | fix(auth): enforce resource ownership
+
+- [ ] 2A. Audit and enforce lecturer/student database relationships and lifecycle integrity
+  What to do / Must NOT do: Verify and correct foreign keys, uniqueness, ownership links, enrollment membership, assignment-class lineage, attempt-student lineage, feedback visibility, and delete/update behavior across lecturer and student features. Add safe forward migrations or canonical schema changes plus isolated relational contract tests. Do not reset or mutate the configured remote Supabase database.
+  Parallelization: Sequential backend prerequisite | Blocked by: 1,2 | Blocks: 3,5,6,7
+  References: `backend/schema.sql`, all files under `backend/models/`, `backend/init_feedback_notes_table.js`, authorization contracts from Todo 2
+  Acceptance criteria: every feature row has an explicit owner or parent path; invalid cross-lecturer/cross-student relationships are rejected; cascade/set-null behavior is intentional and tested; repeated enrollment/attempt identities have appropriate uniqueness guarantees.
+  QA scenarios: isolated relational contract tests cover valid lecturer-class-assignment-student-attempt chains plus orphan, cross-owner, duplicate enrollment, duplicate active attempt, and parent-deletion cases. Evidence `.omo/evidence/task-2a-student-portal-build.txt`.
+  Commit: N | fix(database): enforce academic relationship integrity
 
 - [ ] 3. Add student dashboard, enrollment, assessment, attempt, result, and profile API contracts
   What to do / Must NOT do: Add student-specific routes/controllers/models and stable JSON shapes; include assessment availability state and attempt state machine. Do not expose correct answers before submission or proctor metadata belonging to other users.

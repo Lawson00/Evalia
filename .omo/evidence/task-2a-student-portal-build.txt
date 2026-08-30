@@ -1,0 +1,91 @@
+Task: Todo 2A relationship integrity and backend relationship fixes
+Workspace: C:\projects\Evalia
+Recorded at: 2026-08-30
+
+Changed files:
+- backend/schema.sql
+- backend/migrations/001_relationship_integrity.sql
+- backend/models/AssignmentModel.js
+- backend/models/ClassModel.js
+- backend/models/QuestionModel.js
+- backend/controllers/questionController.js
+- backend/tests/schema-contract.test.js
+- backend/tests/relationship-contract.test.js
+
+Referenced raw execution artifact:
+- C:\projects\Evalia\.omo\evidence\task-2a-local-postgres.log
+
+Scenario: Fresh schema and migration relationship parity
+Invocation: npm test --prefix backend
+Binary observable: PASS; 36 tests passed, including table-scoped checks that questions.created_by is exactly "UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT" in CREATE TABLE questions, lecturer_feedback_notes.created_by is exactly "UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT" in CREATE TABLE lecturer_feedback_notes, and assignments.created_by remains nullable for existing draft/seed contracts.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-student-portal-build.txt
+
+Scenario: Fresh schema executes in disposable local PostgreSQL
+Invocation: docker run --rm -d --name evalia-todo2a-pg -e POSTGRES_PASSWORD=REDACTED -e POSTGRES_DB=evalia_test postgres:16-alpine
+Invocation: docker exec evalia-todo2a-pg sh -lc 'until pg_isready -U postgres -d evalia_test; do sleep 1; done'
+Invocation: Get-Content -Raw backend\schema.sql | docker exec -i evalia-todo2a-pg psql -U postgres -d evalia_test -v ON_ERROR_STOP=1
+Binary observable: PASS; psql exited 0 after CREATE TABLE, CREATE FUNCTION, CREATE TRIGGER, and CREATE INDEX statements.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-local-postgres.log
+
+Scenario: Safe forward migration is transactional and rerun-safe in disposable local PostgreSQL
+Invocation: Get-Content -Raw backend\migrations\001_relationship_integrity.sql | docker exec -i evalia-todo2a-pg psql -U postgres -d evalia_test -v ON_ERROR_STOP=1
+Invocation: Get-Content -Raw backend\migrations\001_relationship_integrity.sql | docker exec -i evalia-todo2a-pg psql -U postgres -d evalia_test -v ON_ERROR_STOP=1
+Binary observable: PASS; both migration runs exited 0, each output BEGIN and COMMIT, and the second run tolerated existing columns, triggers, FKs, and indexes.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-local-postgres.log
+
+Scenario: Migration preflight exists before FK replacement
+Invocation: npm test --prefix backend
+Binary observable: PASS; relationship-contract.test.js asserted transaction start, lecturer_feedback_notes.created_by backfill, questions.created_by backfill, question-owner preflight, assignment_questions cross-scope preflight, duplicate active attempt preflight, NOT NULL conversions, RESTRICT FK replacement for questions.created_by, and trigger recreation.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-student-portal-build.txt
+
+Scenario: Live PostgreSQL negative relationship fixtures
+Invocation: Inline SQL fixture piped to docker exec -i evalia-todo2a-pg psql -U postgres -d evalia_test -v ON_ERROR_STOP=1
+Binary observable: PASS; psql exited 0 after checking missing questions.created_by not_null violation, cross-class assignment_questions rejection, non-enrolled assessment_attempts rejection, duplicate in_progress attempt unique violation, missing lecturer_feedback_notes.created_by not_null violation, class owner drift rejection, lecturer role lineage rejection, student role lineage rejection, and class delete cascade cleanup for topics, assignments, attempts, and proctoring_logs.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-local-postgres.log
+
+Scenario: User role update lineage guard
+Invocation: npm test --prefix backend
+Binary observable: PASS; relationship-contract.test.js asserted trg_user_role_lineage and distinct lecturer/student descendant error messages; live PostgreSQL fixture observed lecturer->student and student->lecturer updates rejected while dependent records existed.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-local-postgres.log
+
+Scenario: Parent deletion semantics prevent class/topic/assignment/attempt/log orphaning
+Invocation: npm test --prefix backend
+Binary observable: PASS; relationship-contract.test.js statically asserted ON UPDATE CASCADE ON DELETE CASCADE for class-bound assignments/topics/questions, assignment_questions, assessment_attempts, and proctoring_logs. Live PostgreSQL fixture deleted a class and verified descendant topic, assignment, attempt, and log rows were gone.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-local-postgres.log
+
+Scenario: Assignment question replacement preserves existing links on invalid replacement
+Invocation: npm test --prefix backend
+Binary observable: PASS; AssignmentModel.addRemoveQuestions replacement test rejected a cross-class question before calling assignment_questions.delete.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-student-portal-build.txt
+
+Scenario: Attempts and lecturer feedback notes require enrolled students and fail-closed authorship
+Invocation: npm test --prefix backend
+Binary observable: PASS; relationship-contract.test.js asserted enforce_attempt_student_enrollment, enforce_feedback_note_scope, ClassModel non-enrolled note rejection before write, and ClassModel note insert with concrete created_by.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-student-portal-build.txt
+
+Scenario: Duplicate enrollments and enrollment write errors are handled correctly
+Invocation: npm test --prefix backend
+Binary observable: PASS; relationship-contract.test.js asserted duplicate enrollment returns alreadyEnrolled=true without another write, and an upsert constraint error returns success=false with the original error message.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-student-portal-build.txt
+
+Scenario: Question/topic backend writes carry relationship ownership fields
+Invocation: npm test --prefix backend
+Binary observable: PASS; relationship-contract.test.js asserted QuestionModel.createQuestion inserts topic_id, created_by, type, and points.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-student-portal-build.txt
+
+Scenario: No remote Supabase mutation
+Invocation: All SQL execution used docker exec against local container evalia-todo2a-pg and database evalia_test; no Supabase URL or service key was used.
+Invocation: docker stop evalia-todo2a-pg
+Invocation: docker ps -a --filter name=evalia-todo2a-pg --format '{{.Names}}'
+Binary observable: PASS; docker stop output evalia-todo2a-pg and final docker ps output was empty.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-local-postgres.log
+
+Scenario: Full backend regression suite
+Invocation: npm test --prefix backend
+Binary observable: PASS; 36 tests passed, 0 failed.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-student-portal-build.txt
+
+Scenario: Whitespace and patch sanity
+Invocation: git diff --check -- backend\schema.sql backend\migrations\001_relationship_integrity.sql backend\models\ClassModel.js backend\models\QuestionModel.js backend\models\AssignmentModel.js backend\controllers\questionController.js backend\tests\schema-contract.test.js backend\tests\relationship-contract.test.js
+Binary observable: PASS; command exited 0. Git emitted only existing CRLF conversion warnings for touched text files.
+Artifact: C:\projects\Evalia\.omo\evidence\task-2a-student-portal-build.txt

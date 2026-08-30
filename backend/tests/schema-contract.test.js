@@ -153,7 +153,7 @@ const schemaContracts = [
     sourceFile: "models/ClassModel.js",
     table: "lecturer_feedback_notes",
     evidencePattern: /lecturer_feedback_notes/,
-    columns: ["id", "class_id", "student_id", "note", "created_at"],
+    columns: ["id", "class_id", "student_id", "created_by", "note", "created_at"],
   },
   {
     sourceFile: "models/ClassModel.js",
@@ -241,8 +241,8 @@ test("assignment insert contract allows model-supported nullable and omitted fie
 
 test("assignment insert contract rejects required fields the model can omit", () => {
   const schemaSql = readBackendFile("schema.sql").replace(
-    /(CREATE TABLE assignments \([\s\S]*?)^\s*created_by UUID REFERENCES users\(id\) ON DELETE SET NULL,/m,
-    "$1    created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
+    /(CREATE TABLE assignments \([\s\S]*?)^\s*created_by UUID REFERENCES users\(id\) ON UPDATE CASCADE ON DELETE SET NULL,/m,
+    "$1    created_by UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,"
   );
 
   assert.throws(

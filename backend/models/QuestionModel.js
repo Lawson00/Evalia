@@ -144,12 +144,14 @@ class QuestionModel {
   /**
    * Create New Question Topic (in Supabase DB)
    */
-  static async createTopic({ name, classId, courseCode, description }) {
+  static async createTopic({ name, classId, courseCode, description, lecturerId }) {
     const insertPayload = {
       name,
       description: description || "",
     };
     if (classId) insertPayload.class_id = classId;
+    if (courseCode) insertPayload.course_code = courseCode;
+    if (lecturerId) insertPayload.lecturer_id = lecturerId;
 
     let data, error;
     try {
@@ -247,7 +249,7 @@ class QuestionModel {
   /**
    * Create New Question (in Supabase DB) - Supporting All Question Types
    */
-  static async createQuestion({ topicId, questionText, prompt, type, options, correctAnswer, difficulty, points, explanation }) {
+  static async createQuestion({ topicId, questionText, prompt, type, options, correctAnswer, difficulty, points, explanation, createdBy }) {
     const cleanPrompt = questionText || prompt;
     let cleanOptions = options;
     let cleanCorrect = correctAnswer;
@@ -258,18 +260,21 @@ class QuestionModel {
       if (correctObj) cleanCorrect = correctObj.label;
     }
 
+    const insertPayload = {
+      question_text: cleanPrompt,
+      type: type || "MCQ",
+      options: cleanOptions || [],
+      correct_answer: cleanCorrect || (Array.isArray(cleanOptions) ? cleanOptions[0] : "Option A"),
+      difficulty: (difficulty || "medium").toLowerCase(),
+      points: Number(points) || 2,
+      explanation: explanation || "",
+    };
+    if (topicId) insertPayload.topic_id = topicId;
+    if (createdBy) insertPayload.created_by = createdBy;
+
     const { data, error } = await supabaseAdmin
       .from("questions")
-      .insert([
-        {
-          topic_id: topicId || "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-          question_text: cleanPrompt,
-          options: cleanOptions || [],
-          correct_answer: cleanCorrect || (Array.isArray(cleanOptions) ? cleanOptions[0] : "Option A"),
-          difficulty: (difficulty || "medium").toLowerCase(),
-          explanation: explanation || "",
-        },
-      ])
+      .insert([insertPayload])
       .select()
       .single();
 
@@ -288,7 +293,7 @@ class QuestionModel {
    * Auto-generate AI Questions from Prompt, PDF Document, or Image Vision OCR
    * Supports previewOnly mode (returns questions without saving to DB) and questionType selection
    */
-  static async generateAIQuestions({ topicId, prompt, imageBase64, pdfBase64, count = 5, difficulty = "mixed", type = "mixed", questionType, questionTypes, previewOnly = false }) {
+  static async generateAIQuestions({ topicId, prompt, imageBase64, pdfBase64, count = 5, difficulty = "mixed", type = "mixed", questionType, questionTypes, previewOnly = false, createdBy }) {
     const AIService = require("../services/aiService");
     const targetType = questionTypes || questionType || type || "mixed";
 
@@ -365,6 +370,7 @@ class QuestionModel {
         difficulty: item.difficulty || "medium",
         points: item.points || 2,
         explanation: item.explanation || "",
+        createdBy,
       });
       createdQuestions.push(q);
     }
@@ -375,7 +381,7 @@ class QuestionModel {
   /**
    * Bulk Create Approved Questions in Database (after user preview & modification)
    */
-  static async bulkCreateQuestions(questions = []) {
+  static async bulkCreateQuestions(questions = [], createdBy = null) {
     const created = [];
     for (const item of questions) {
       const q = await this.createQuestion({
@@ -387,6 +393,7 @@ class QuestionModel {
         difficulty: item.difficulty,
         points: item.points || 2,
         explanation: item.explanation || "",
+        createdBy: item.createdBy || createdBy,
       });
       created.push(q);
     }

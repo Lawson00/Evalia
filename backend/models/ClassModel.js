@@ -55,6 +55,7 @@ class ClassModel {
       }
 
       const { data, error } = await query;
+
       if (!error && data) {
         return data.map((row) => this.mapClassRow(row, row.class_enrollments?.length || 0));
       }
@@ -90,20 +91,20 @@ class ClassModel {
 
   static async canManageClass(classId, user) {
     if (!classId || !user?.userId) return false;
-    if (isAdmin(user)) {
-      const { data, error } = await supabaseAdmin.from("classes").select("id").eq("id", classId).single();
+
+    try {
+      let query = supabaseAdmin.from("classes").select("id").eq("id", classId);
+      if (!isAdmin(user)) {
+        if (!isLecturer(user)) return false;
+        query = query.eq("lecturer_id", user.userId);
+      }
+
+      const { data, error } = await query.single();
       return !error && Boolean(data);
+    } catch (err) {
+      console.error("Supabase canManageClass Error:", err.message);
+      return false;
     }
-    if (!isLecturer(user)) return false;
-
-    const { data, error } = await supabaseAdmin
-      .from("classes")
-      .select("id")
-      .eq("id", classId)
-      .eq("lecturer_id", user.userId)
-      .single();
-
-    return !error && Boolean(data);
   }
 
   static async isStudentEnrolled(classId, studentId) {
@@ -379,12 +380,26 @@ class ClassModel {
     }
 
     if (actualStudentId && targetClass.id) {
+      const alreadyEnrolled = await this.isStudentEnrolled(targetClass.id, actualStudentId);
+      if (alreadyEnrolled) {
+        return {
+          success: true,
+          alreadyEnrolled: true,
+          class: targetClass,
+        };
+      }
+
       const { error } = await supabaseAdmin
         .from("class_enrollments")
         .upsert([{ class_id: targetClass.id, student_id: actualStudentId }], { onConflict: "class_id,student_id" });
 
       if (error) {
         console.error("Supabase enrollStudent Error:", error.message);
+        return {
+          success: false,
+          message: `Failed to enroll into class: ${error.message}`,
+          class: targetClass,
+        };
       }
     }
 
@@ -557,30 +572,33 @@ class ClassModel {
   /**
    * Save Lecturer Grade Feedback Note Directly to Supabase Postgres Database Table
    */
-  static async addStudentNote(classId, studentId, note) {
+  static async addStudentNote(classId, studentId, note, lecturerId = null) {
     if (!note || !note.trim()) return false;
     const cleanNote = note.trim();
 
     try {
+      let actualLecturerId = lecturerId;
+      if (!actualLecturerId) {
+        const { data: classRow, error: classError } = await supabaseAdmin
+          .from("classes")
+          .select("lecturer_id")
+          .eq("id", classId)
+          .single();
+
+        if (classError || !classRow?.lecturer_id) return false;
+        actualLecturerId = classRow.lecturer_id;
+      }
+
+      const notePayload = { class_id: classId, student_id: studentId, note: cleanNote };
+      notePayload.created_by = actualLecturerId;
+
       const { error: err1 } = await supabaseAdmin
         .from("lecturer_feedback_notes")
-        .insert([{ class_id: classId, student_id: studentId, note: cleanNote }]);
+        .insert([notePayload]);
 
       if (!err1) return true;
-
-      // Fallback to ai_analytics_cache table in Supabase Postgres
-      const { error: err2 } = await supabaseAdmin
-        .from("ai_analytics_cache")
-        .insert([
-          {
-            entity_type: "student_feedback_note",
-            entity_id: studentId,
-            insights_data: { class_id: classId, note: cleanNote },
-          },
-        ]);
-
-      if (err2) console.error("Supabase addStudentNote Error:", err2.message);
-      return !err2;
+      console.error("Supabase addStudentNote Error:", err1.message);
+      return false;
     } catch (err) {
       console.error("Supabase addStudentNote Exception:", err.message);
       return false;
@@ -590,7 +608,9 @@ class ClassModel {
   static async addStudentNoteForUser(classId, studentId, note, user) {
     const canManage = await this.canManageClass(classId, user);
     if (!canManage) return null;
-    return this.addStudentNote(classId, studentId, note);
+    const isEnrolled = await this.isStudentEnrolled(classId, studentId);
+    if (!isEnrolled) return null;
+    return this.addStudentNote(classId, studentId, note, user?.userId || null);
   }
 }
 

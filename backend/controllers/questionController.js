@@ -1,9 +1,20 @@
 const QuestionModel = require("../models/QuestionModel");
+const ClassModel = require("../models/ClassModel");
 const { sendSuccess, sendError } = require("../utils/responseHandler");
+
+const userCanManageTopicClass = async (classId, user) => {
+  if (!classId || classId === "all") return true;
+  return ClassModel.canManageClass(classId, user);
+};
 
 const getTopics = async (req, res, next) => {
   try {
     const { classId } = req.query;
+    const canManageClass = await userCanManageTopicClass(classId, req.user);
+    if (!canManageClass) {
+      return sendError(res, "Access forbidden for this class.", null, 403);
+    }
+
     const topics = await QuestionModel.getTopics({ classId });
     return sendSuccess(res, "Fetched topics successfully.", { topics });
   } catch (err) {
@@ -17,7 +28,18 @@ const createTopic = async (req, res, next) => {
     if (!name) {
       return sendError(res, "Topic name is required.", null, 400);
     }
-    const topic = await QuestionModel.createTopic({ name, classId, courseCode, description });
+    const canManageClass = await userCanManageTopicClass(classId, req.user);
+    if (!canManageClass) {
+      return sendError(res, "Access forbidden for this class.", null, 403);
+    }
+
+    const topic = await QuestionModel.createTopic({
+      name,
+      classId,
+      courseCode,
+      description,
+      lecturerId: req.user?.userId,
+    });
     return sendSuccess(res, "Topic category created successfully!", { topic }, 201);
   } catch (err) {
     next(err);
@@ -27,6 +49,11 @@ const createTopic = async (req, res, next) => {
 const updateTopic = async (req, res, next) => {
   try {
     const { topicId } = req.params;
+    const canManageClass = await userCanManageTopicClass(req.body?.classId, req.user);
+    if (!canManageClass) {
+      return sendError(res, "Access forbidden for this class.", null, 403);
+    }
+
     const topic = await QuestionModel.updateTopic(topicId, req.body);
     if (!topic) return sendError(res, "Topic not found.", null, 404);
     return sendSuccess(res, "Topic updated successfully.", { topic });
@@ -57,17 +84,20 @@ const getQuestions = async (req, res, next) => {
 
 const createQuestion = async (req, res, next) => {
   try {
-    const { topicId, questionText, options, correctAnswer, difficulty, explanation } = req.body;
+    const { topicId, questionText, options, correctAnswer, difficulty, explanation, type, points } = req.body;
     if (!questionText || !correctAnswer) {
       return sendError(res, "questionText and correctAnswer are required.", null, 400);
     }
     const question = await QuestionModel.createQuestion({
-      topicId: topicId || "top-1",
+      topicId,
       questionText,
       options,
       correctAnswer,
       difficulty,
       explanation,
+      type,
+      points,
+      createdBy: req.user?.userId,
     });
     return sendSuccess(res, "Question added to Question Bank!", { question }, 201);
   } catch (err) {
@@ -81,7 +111,7 @@ const bulkCreateQuestions = async (req, res, next) => {
     if (!Array.isArray(questions) || questions.length === 0) {
       return sendError(res, "Questions array is required for bulk creation.", null, 400);
     }
-    const created = await QuestionModel.bulkCreateQuestions(questions);
+    const created = await QuestionModel.bulkCreateQuestions(questions, req.user?.userId);
     return sendSuccess(res, `Successfully saved ${created.length} approved questions to Question Bank!`, { questions: created }, 201);
   } catch (err) {
     next(err);
@@ -101,6 +131,7 @@ const aiGenerateQuestions = async (req, res, next) => {
       questionType: questionType || type || "mixed",
       questionTypes,
       previewOnly: previewOnly !== undefined ? Boolean(previewOnly) : true, // Default to preview mode for UI review & modification
+      createdBy: req.user?.userId,
     });
     return sendSuccess(
       res,
