@@ -5,25 +5,28 @@ import { usePathname } from "next/navigation";
 import {
   Bell,
   BookOpen,
-  ChartNoAxesCombined,
   ChevronDown,
   CircleHelp,
+  GraduationCap,
   LayoutDashboard,
+  LogOut,
   Menu,
   Settings,
-  LogOut,
+  Trophy,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 
-const nav = [
-  { label: "Overview", icon: LayoutDashboard, href: "/user" },
-  { label: "My Assignments", icon: BookOpen, href: "/user#assessments" },
-  {
-    label: "Performance",
-    icon: ChartNoAxesCombined,
-    href: "/user#performance",
-  },
+const mainNav = [
+  { label: "Overview", icon: LayoutDashboard, href: "/user", exact: true },
+  { label: "My Classes", icon: GraduationCap, href: "/user/classes", exact: false },
+  { label: "Assessments", icon: BookOpen, href: "/user/assessments", exact: false },
+  { label: "Results", icon: Trophy, href: "/user/results", exact: false },
+];
+
+const utilNav = [
+  { label: "Settings", icon: Settings, href: "/user/settings" },
+  { label: "Help Centre", icon: CircleHelp, href: "/user/help" },
 ];
 
 export function UserShell({ children }: { children: React.ReactNode }) {
@@ -46,41 +49,50 @@ export function UserShell({ children }: { children: React.ReactNode }) {
     return user?.email ? user.email[0].toUpperCase() : "ST";
   };
 
-  const subtitle = user?.indexNumber ? `Index: ${user.indexNumber}` : "Student";
+  const isActive = (href: string, exact: boolean) => {
+    if (exact) return pathname === href;
+    return pathname.startsWith(href);
+  };
+
+  const subtitle = user?.indexNumber ? `Index: ${user.indexNumber}` : user?.email || "Student";
 
   return (
     <div className="user-app">
       <aside className={`user-sidebar ${open ? "is-open" : ""}`}>
-        <Link href="/user" className="brand">
+        <Link href="/user" className="brand" onClick={() => setOpen(false)}>
           <span className="brand-mark">E</span>
-          <span>Evalia Student</span>
+          <span>Evalia</span>
         </Link>
+
         <nav className="user-nav">
-          {nav.map(({ label, icon: Icon, href }, index) => (
+          <span className="nav-group-label">Main</span>
+          {mainNav.map(({ label, icon: Icon, href, exact }) => (
             <Link
-              onClick={() => setOpen(false)}
-              className={index === 0 && pathname === "/user" ? "active" : ""}
-              href={href}
               key={label}
+              onClick={() => setOpen(false)}
+              className={isActive(href, exact) ? "active" : ""}
+              href={href}
+            >
+              <Icon size={18} />
+              {label}
+            </Link>
+          ))}
+
+          <span className="nav-group-label" style={{ marginTop: 24 }}>Utilities</span>
+          {utilNav.map(({ label, icon: Icon, href }) => (
+            <Link
+              key={label}
+              onClick={() => setOpen(false)}
+              className={pathname === href ? "active" : ""}
+              href={href}
             >
               <Icon size={18} />
               {label}
             </Link>
           ))}
         </nav>
+
         <div className="sidebar-bottom">
-          <Link
-            className={pathname === "/user/settings" ? "active" : ""}
-            href="/user/settings"
-          >
-            <Settings size={18} /> Settings
-          </Link>
-          <Link
-            className={pathname === "/user/help" ? "active" : ""}
-            href="/user/help"
-          >
-            <CircleHelp size={18} /> Help centre
-          </Link>
           <button
             onClick={logout}
             style={{
@@ -89,8 +101,8 @@ export function UserShell({ children }: { children: React.ReactNode }) {
               alignItems: "center",
               gap: 10,
               padding: "10px 14px",
-              background: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid rgba(239, 68, 68, 0.25)",
+              background: "rgba(239, 68, 68, 0.08)",
+              border: "1px solid rgba(239, 68, 68, 0.18)",
               borderRadius: 10,
               color: "#ef4444",
               fontSize: 13,
@@ -106,12 +118,13 @@ export function UserShell({ children }: { children: React.ReactNode }) {
             <span className="avatar">{getInitials()}</span>
             <div>
               <strong>{displayName}</strong>
-              <small>{user?.email || subtitle}</small>
+              <small>{subtitle}</small>
             </div>
             <ChevronDown size={16} />
           </Link>
         </div>
       </aside>
+
       {open && (
         <button
           aria-label="Close navigation"
@@ -119,6 +132,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
           onClick={() => setOpen(false)}
         />
       )}
+
       <section className="user-content">
         <header className="user-topbar">
           <button
@@ -128,7 +142,7 @@ export function UserShell({ children }: { children: React.ReactNode }) {
           >
             <Menu size={21} />
           </button>
-          <div className="mobile-brand">Evalia Student</div>
+          <div className="mobile-brand">Evalia</div>
           <button className="notification-button" aria-label="Notifications">
             <Bell size={20} />
             <span />
