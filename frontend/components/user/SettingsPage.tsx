@@ -23,7 +23,8 @@ export function SettingsPage() {
         <p className="eyebrow">Student Account</p>
         <h1>Settings</h1>
         <p>
-          Manage your student profile, login credentials, and notification preferences.
+          Manage your student profile, login credentials, and notification
+          preferences.
         </p>
       </div>
       <div className="settings-layout">
@@ -42,7 +43,9 @@ export function SettingsPage() {
               </div>
               <div>
                 <h2>Profile details</h2>
-                <p>Your identity as visible to lecturers on assigned coursework.</p>
+                <p>
+                  Your identity as visible to lecturers on assigned coursework.
+                </p>
               </div>
             </div>
             <div className="profile-editor">
@@ -51,12 +54,20 @@ export function SettingsPage() {
             </div>
             <div className="form-grid">
               <label>
-                First name
+                First Name
                 <input defaultValue="Lawson" />
               </label>
               <label>
-                Last name
+                Last Name
                 <input defaultValue="Samson" />
+              </label>
+              <label>
+                Index Number
+                <input type="text" defaultValue="UEB3214122" />
+              </label>
+              <label>
+                Phone Number
+                <input defaultValue="0205150909" />
               </label>
               <label className="full-width">
                 Email address
@@ -89,7 +100,10 @@ export function SettingsPage() {
             <div className="preference-row">
               <div>
                 <strong>Email notifications</strong>
-                <p>Assignment releases, due date warnings, and grade notifications.</p>
+                <p>
+                  Assignment releases, due date warnings, and grade
+                  notifications.
+                </p>
               </div>
               <button
                 onClick={() => setEmailAlerts(!emailAlerts)}
