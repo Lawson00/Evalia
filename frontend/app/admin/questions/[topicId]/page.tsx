@@ -6,13 +6,10 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Search,
-  Sparkles,
   Loader2,
-  X,
   Trash2,
-  CheckSquare,
-  Square,
   AlertTriangle,
+  Plus,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -35,27 +32,6 @@ export default function TopicDetailPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [targetDeleteId, setTargetDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  // Modals state
-  const [editingQuestion, setEditingQuestion] = useState<BankQuestion | null>(null);
-  const [addModalOpen, setAddModalOpen] = useState(false);
-
-  // New/Editing question form state
-  const [form, setForm] = useState<BankQuestion>({
-    id: "",
-    topicId: String(topicId),
-    prompt: "",
-    type: "MCQ",
-    difficulty: "Easy",
-    points: 2,
-    explanation: "",
-    options: [
-      { id: "opt-1", label: "", isCorrect: true },
-      { id: "opt-2", label: "", isCorrect: false },
-      { id: "opt-3", label: "", isCorrect: false },
-      { id: "opt-4", label: "", isCorrect: false },
-    ],
-  });
 
   const fetchTopicAndQuestions = async () => {
     try {
@@ -154,93 +130,6 @@ export default function TopicDetailPage() {
     }
   };
 
-  const handleOpenEdit = (q: BankQuestion) => {
-    setEditingQuestion(q);
-    setForm(JSON.parse(JSON.stringify(q)));
-  };
-
-  const handleOpenAdd = () => {
-    setEditingQuestion(null);
-    setForm({
-      id: "",
-      topicId: String(topicId),
-      prompt: "",
-      type: "MCQ",
-      difficulty: "Easy",
-      points: 2,
-      explanation: "",
-      options: [
-        { id: `opt-1-${Date.now()}`, label: "Option A", isCorrect: true },
-        { id: `opt-2-${Date.now()}`, label: "Option B", isCorrect: false },
-        { id: `opt-3-${Date.now()}`, label: "Option C", isCorrect: false },
-        { id: `opt-4-${Date.now()}`, label: "Option D", isCorrect: false },
-      ],
-    });
-    setAddModalOpen(true);
-  };
-
-  const handleSaveQuestion = async () => {
-    if (!form.prompt.trim()) return;
-
-    try {
-      if (editingQuestion) {
-        await api.put(`/questions/${form.id}`, {
-          prompt: form.prompt,
-          type: form.type,
-          difficulty: form.difficulty,
-          points: form.points,
-          explanation: form.explanation,
-          options: form.options,
-        });
-        setEditingQuestion(null);
-      } else {
-        await api.post("/questions", {
-          topicId: String(topicId),
-          prompt: form.prompt,
-          type: form.type,
-          difficulty: form.difficulty,
-          points: form.points,
-          explanation: form.explanation,
-          options: form.options,
-        });
-        setAddModalOpen(false);
-      }
-      await fetchTopicAndQuestions();
-    } catch (err: any) {
-      alert(err.message || "Failed to save question.");
-    }
-  };
-
-  const handleOptionChange = (idx: number, field: "label" | "isCorrect", val: string | boolean) => {
-    const newOpts = [...form.options];
-    if (field === "isCorrect" && val === true) {
-      newOpts.forEach((o) => (o.isCorrect = false));
-      newOpts[idx].isCorrect = true;
-    } else if (field === "label") {
-      newOpts[idx].label = val as string;
-    }
-    setForm({ ...form, options: newOpts });
-  };
-
-  const handleAddOption = () => {
-    setForm({
-      ...form,
-      options: [
-        ...form.options,
-        { id: `opt-${Date.now()}`, label: `New Choice ${form.options.length + 1}`, isCorrect: false },
-      ],
-    });
-  };
-
-  const handleRemoveOption = (idx: number) => {
-    if (form.options.length <= 2) return;
-    const newOpts = form.options.filter((_, i) => i !== idx);
-    if (!newOpts.some((o) => o.isCorrect) && newOpts.length > 0) {
-      newOpts[0].isCorrect = true;
-    }
-    setForm({ ...form, options: newOpts });
-  };
-
   if (loading) {
     return (
       <div style={{ padding: 64, textAlign: "center", color: "var(--text-muted)" }}>
@@ -281,25 +170,6 @@ export default function TopicDetailPage() {
           </div>
 
           <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={handleOpenAdd}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "9px 16px",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 600,
-                background: "var(--bg-elevated)",
-                color: "var(--text-primary)",
-                border: "1px solid var(--border)",
-                cursor: "pointer",
-              }}
-            >
-              + Add Question Manually
-            </button>
-
             <Link
               href={`/admin/questions/create?topicId=${topicId}`}
               style={{
@@ -316,7 +186,7 @@ export default function TopicDetailPage() {
                 boxShadow: "0 4px 12px rgba(99, 102, 241, 0.3)",
               }}
             >
-              <Sparkles size={16} /> Create / Generate AI Questions
+              <Plus size={16} /> Create Questions
             </Link>
           </div>
         </div>
@@ -470,7 +340,7 @@ export default function TopicDetailPage() {
               key={q.id}
               question={q}
               index={idx}
-              onEdit={handleOpenEdit}
+              onEdit={() => router.push(`/admin/questions/create?topicId=${topicId}`)}
               onDelete={handleOpenSingleDelete}
               isSelected={selectedIds.includes(q.id)}
               onSelectToggle={handleToggleSelect}
@@ -523,110 +393,6 @@ export default function TopicDetailPage() {
                 ? "Are you sure you want to permanently delete this question from the database? This action cannot be undone."
                 : `Are you sure you want to permanently delete the selected ${selectedIds.length} questions from the Question Bank? This action cannot be undone.`}
             </p>
-          </div>
-        </div>
-      </Modal>
-
-      {/* MANUAL EDIT / ADD QUESTION MODAL */}
-      <Modal
-        open={!!editingQuestion || addModalOpen}
-        onClose={() => {
-          setEditingQuestion(null);
-          setAddModalOpen(false);
-        }}
-        title={editingQuestion ? "Edit Question & Answer Choices" : "Add New Question"}
-        width={680}
-        footer={
-          <>
-            <button
-              onClick={() => {
-                setEditingQuestion(null);
-                setAddModalOpen(false);
-              }}
-              style={{ padding: "8px 16px", background: "none", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-secondary)", fontSize: 13, cursor: "pointer" }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveQuestion}
-              style={{ padding: "8px 16px", background: "linear-gradient(135deg, #6366F1, #8B5CF6)", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-            >
-              Save Question & Options
-            </button>
-          </>
-        }
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {/* Question Prompt */}
-          <div>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>
-              Question Prompt / Statement
-            </label>
-            <textarea
-              rows={3}
-              value={form.prompt}
-              onChange={(e) => setForm({ ...form, prompt: e.target.value })}
-              placeholder="e.g. Which metric best describes the percentage of users who complete a desired action?"
-              style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text-primary)", fontSize: 13, outline: "none" }}
-            />
-          </div>
-
-          {/* Controls: Type, Difficulty, Points */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
-            <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Question Type</label>
-              <select
-                value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value as BankQuestion["type"] })}
-                style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text-primary)", fontSize: 13, outline: "none" }}
-              >
-                <option value="MCQ">MCQ (Multiple Choice)</option>
-                <option value="fill_in_blank">Fill in the Blanks (Gap Fill)</option>
-                <option value="true_false">True or False</option>
-                <option value="short_answer">Short Answer</option>
-                <option value="essay">Essay</option>
-                <option value="coding">Coding Sandbox</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Difficulty Level</label>
-              <select
-                value={form.difficulty}
-                onChange={(e) => setForm({ ...form, difficulty: e.target.value as BankQuestion["difficulty"] })}
-                style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text-primary)", fontSize: 13, outline: "none" }}
-              >
-                <option value="Easy">Easy</option>
-                <option value="Medium">Medium</option>
-                <option value="Hard">Hard</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Points Value</label>
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={form.points}
-                onChange={(e) => setForm({ ...form, points: Number(e.target.value) })}
-                style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text-primary)", fontSize: 13, outline: "none" }}
-              />
-            </div>
-          </div>
-
-          {/* Explanation */}
-          <div>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>
-              Educational Explanation / Solution Notes
-            </label>
-            <textarea
-              rows={2}
-              value={form.explanation || ""}
-              onChange={(e) => setForm({ ...form, explanation: e.target.value })}
-              placeholder="e.g. Conversion rate is calculated by dividing total conversions by total unique visitors."
-              style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text-primary)", fontSize: 13, outline: "none" }}
-            />
           </div>
         </div>
       </Modal>

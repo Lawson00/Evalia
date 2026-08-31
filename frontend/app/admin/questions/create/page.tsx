@@ -59,13 +59,21 @@ export default function CreateQuestionPage() {
     "coding",
   ]);
 
-  // Manual Mode State
+  // Manual Mode Common State
   const [questionType, setQuestionType] = useState<"MCQ" | "fill_in_blank" | "true_false" | "short_answer" | "essay" | "coding">("MCQ");
   const [questionText, setQuestionText] = useState("");
-  const [options, setOptions] = useState<string[]>(["", "", "", ""]);
-  const [correctAnswerIndex, setCorrectAnswerIndex] = useState<number>(0);
   const [explanation, setExplanation] = useState("");
   const [isEnhancing, setIsEnhancing] = useState(false);
+
+  // Manual Mode Mode-Specific State
+  const [options, setOptions] = useState<string[]>(["", "", "", ""]);
+  const [correctAnswerIndex, setCorrectAnswerIndex] = useState<number>(0);
+  const [tfAnswer, setTfAnswer] = useState<"True" | "False">("True");
+  const [targetBlankTerm, setTargetBlankTerm] = useState("");
+  const [shortAnswerKey, setShortAnswerKey] = useState("");
+  const [essayRubric, setEssayRubric] = useState("");
+  const [initialCode, setInitialCode] = useState("function solution(input) {\n  // Write solution algorithm here\n}");
+  const [codeSolution, setCodeSolution] = useState("");
 
   // AI Prompt Mode State
   const [aiPrompt, setAiPrompt] = useState("");
@@ -165,59 +173,117 @@ export default function CreateQuestionPage() {
       return;
     }
 
-    const formattedOpts =
-      questionType === "true_false"
-        ? [
-            { id: "true", label: "True", isCorrect: correctAnswerIndex === 0 },
-            { id: "false", label: "False", isCorrect: correctAnswerIndex === 1 },
-          ]
-        : questionType === "MCQ"
-        ? options.map((opt, idx) => ({
-            id: `opt-${idx + 1}`,
-            label: opt || `Option ${String.fromCharCode(65 + idx)}`,
-            isCorrect: idx === correctAnswerIndex,
-          }))
-        : [];
+    let finalCorrectAnswer = "";
+    let finalOpts: any[] = [];
+
+    if (questionType === "MCQ") {
+      finalOpts = options.map((opt, idx) => ({
+        id: `opt-${idx + 1}`,
+        label: opt || `Option ${String.fromCharCode(65 + idx)}`,
+        isCorrect: idx === correctAnswerIndex,
+      }));
+      finalCorrectAnswer = options[correctAnswerIndex] || options[0] || "";
+    } else if (questionType === "true_false") {
+      finalOpts = [
+        { id: "true", label: "True", isCorrect: tfAnswer === "True" },
+        { id: "false", label: "False", isCorrect: tfAnswer === "False" },
+      ];
+      finalCorrectAnswer = tfAnswer;
+    } else if (questionType === "fill_in_blank") {
+      finalOpts = [];
+      finalCorrectAnswer = targetBlankTerm || questionText;
+    } else if (questionType === "short_answer") {
+      finalOpts = [];
+      finalCorrectAnswer = shortAnswerKey || questionText;
+    } else if (questionType === "essay") {
+      finalOpts = [];
+      finalCorrectAnswer = essayRubric || questionText;
+    } else if (questionType === "coding") {
+      finalOpts = [initialCode];
+      finalCorrectAnswer = codeSolution || initialCode;
+    }
+
+    const cleanDifficulty = ["easy", "medium", "hard"].includes((difficulty || "").toLowerCase())
+      ? difficulty.toLowerCase()
+      : "medium";
 
     const newQuestion = {
       id: `manual-draft-${Date.now()}`,
       topicId: selectedTopic,
       prompt: questionText,
+      questionText,
       type: questionType,
-      difficulty,
+      difficulty: cleanDifficulty,
       points: 2,
       explanation,
-      options: formattedOpts,
-      correctAnswer:
-        questionType === "fill_in_blank" || questionType === "short_answer" || questionType === "essay" || questionType === "coding"
-          ? explanation || questionText
-          : formattedOpts[correctAnswerIndex]?.label || formattedOpts[0]?.label || "",
+      options: finalOpts,
+      correctAnswer: finalCorrectAnswer,
     };
 
     setPreviewQuestions((prev) => [...prev, newQuestion]);
     setIsPreviewMode(true);
-    setSuccessMessage("✨ Manual question added to Draft Preview Studio!");
+    setSuccessMessage("✨ Question added to Draft Batch Studio! You can review, add more, or save to database.");
     setQuestionText("");
     setExplanation("");
+    setTargetBlankTerm("");
+    setShortAnswerKey("");
+    setEssayRubric("");
+    setCodeSolution("");
   };
 
   const handleSaveManualQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!questionText.trim()) {
+      alert("Please enter a question sentence or prompt.");
+      return;
+    }
+
+    let finalCorrectAnswer = "";
+    let finalOpts: any[] = [];
+
+    if (questionType === "MCQ") {
+      finalOpts = options;
+      finalCorrectAnswer = options[correctAnswerIndex] || options[0] || "";
+    } else if (questionType === "true_false") {
+      finalOpts = ["True", "False"];
+      finalCorrectAnswer = tfAnswer;
+    } else if (questionType === "fill_in_blank") {
+      finalOpts = [];
+      finalCorrectAnswer = targetBlankTerm || questionText;
+    } else if (questionType === "short_answer") {
+      finalOpts = [];
+      finalCorrectAnswer = shortAnswerKey || questionText;
+    } else if (questionType === "essay") {
+      finalOpts = [];
+      finalCorrectAnswer = essayRubric || questionText;
+    } else if (questionType === "coding") {
+      finalOpts = [initialCode];
+      finalCorrectAnswer = codeSolution || initialCode;
+    }
+
+    const cleanDifficulty = ["easy", "medium", "hard"].includes((difficulty || "").toLowerCase())
+      ? difficulty.toLowerCase()
+      : "medium";
+
     try {
       setIsGenerating(true);
       await api.post("/questions", {
         topicId: selectedTopic,
         questionText,
         type: questionType,
-        options: questionType === "fill_in_blank" ? [] : options,
-        correctAnswer: questionType === "fill_in_blank" ? "" : (options[correctAnswerIndex] || options[0]),
-        difficulty,
+        options: finalOpts,
+        correctAnswer: finalCorrectAnswer,
+        difficulty: cleanDifficulty,
         explanation,
       });
 
       setSuccessMessage("✅ Question saved successfully to database!");
       setQuestionText("");
       setExplanation("");
+      setTargetBlankTerm("");
+      setShortAnswerKey("");
+      setEssayRubric("");
+      setCodeSolution("");
       setTimeout(() => {
         setSuccessMessage("");
         router.push(`/admin/questions/${selectedTopic}`);
@@ -244,7 +310,7 @@ export default function CreateQuestionPage() {
         count: aiCount,
         difficulty,
         questionTypes: selectedModes,
-        previewOnly: true, // Fetch generated questions without saving directly to DB
+        previewOnly: true,
       });
 
       const generatedList = res.questions || res.data?.questions || [];
@@ -351,7 +417,7 @@ export default function CreateQuestionPage() {
         topicId: selectedTopic,
         prompt: "New Custom Assessment Question Prompt",
         type: "MCQ",
-        difficulty: "Medium",
+        difficulty: "medium",
         points: 2,
         explanation: "Educational explanation for correct answer choice.",
         options: [
@@ -373,16 +439,21 @@ export default function CreateQuestionPage() {
 
     try {
       setIsSavingBulk(true);
-      const formattedToSave = previewQuestions.map((q) => ({
-        topicId: selectedTopic || q.topicId,
-        questionText: q.prompt || q.questionText,
-        type: q.type || "MCQ",
-        options: (q.options || []).map((o: any) => (typeof o === "object" ? o.label : o)),
-        correctAnswer: q.correctAnswer || (typeof q.options?.[0] === "object" ? q.options[0].label : q.options?.[0]),
-        difficulty: q.difficulty || "medium",
-        points: q.points || 2,
-        explanation: q.explanation || "",
-      }));
+      const formattedToSave = previewQuestions.map((q) => {
+        const rawDiff = (q.difficulty || difficulty || "medium").toLowerCase();
+        const cleanDiff = ["easy", "medium", "hard"].includes(rawDiff) ? rawDiff : "medium";
+
+        return {
+          topicId: selectedTopic || q.topicId,
+          questionText: q.prompt || q.questionText,
+          type: q.type || "MCQ",
+          options: (q.options || []).map((o: any) => (typeof o === "object" ? o.label : o)),
+          correctAnswer: q.correctAnswer || (typeof q.options?.[0] === "object" ? q.options[0].label : q.options?.[0]),
+          difficulty: cleanDiff,
+          points: q.points || 2,
+          explanation: q.explanation || "",
+        };
+      });
 
       await api.post("/questions/bulk", { questions: formattedToSave });
       setSuccessMessage(`✅ Successfully saved ${formattedToSave.length} questions to Question Bank!`);
@@ -396,7 +467,6 @@ export default function CreateQuestionPage() {
     }
   };
 
-  // Reusable Multi-Select Question Mode Selector Component (Horizontal Pill Bar)
   const renderMultiSelectModeSelector = () => (
     <div style={{ marginBottom: 4 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -469,15 +539,15 @@ export default function CreateQuestionPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)" }}>
-              Question Creator & AI Generation Suite
+              Question Creator &amp; AI Generation Suite
             </h1>
             <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
-              Generate questions from text prompts, PDFs, or photos with full interactive preview & modification.
+              Generate questions from text prompts, PDFs, or photos with full interactive preview &amp; modification.
             </p>
           </div>
 
           <Badge variant="accent" size="md">
-            Powered by OpenAI ChatGPT & Vision OCR
+            Powered by OpenAI ChatGPT &amp; Vision OCR
           </Badge>
         </div>
       </div>
@@ -495,7 +565,7 @@ export default function CreateQuestionPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 14 }}>
             <div>
               <h2 style={{ fontSize: 20, fontWeight: 800, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
-                <Sparkles size={22} style={{ color: "var(--accent-light)" }} /> AI Question Draft Preview & Modification Studio
+                <Sparkles size={22} style={{ color: "var(--accent-light)" }} /> AI Question Draft Preview &amp; Modification Studio
               </h2>
               <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
                 Review and modify generated questions, edit text/options/answers, delete unwanted items, or add new custom questions before committing to the database.
@@ -603,7 +673,7 @@ export default function CreateQuestionPage() {
                     position: "relative",
                   }}
                 >
-                  {/* HEADER: Question Index, Format Selector, Difficulty, Points, Remove Button */}
+                  {/* HEADER */}
                   <div
                     style={{
                       display: "flex",
@@ -708,10 +778,9 @@ export default function CreateQuestionPage() {
                     </button>
                   </div>
 
-                  {/* 1. CODING PROBLEM CARDS (SPACIOUS DARK IDE STYLING) */}
+                  {/* 1. CODING PROBLEM CARDS */}
                   {isCoding && (
                     <div style={{ background: "#0F172A", border: "1.5px solid rgba(99, 102, 241, 0.4)", borderRadius: 12, padding: 18, marginBottom: 16 }}>
-                      {/* Top Bar simulation of IDE */}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 10, borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#FF5F56" }} />
@@ -727,7 +796,7 @@ export default function CreateQuestionPage() {
                       </div>
 
                       <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 6 }}>
-                        Code Problem Prompt & Instructions
+                        Code Problem Prompt &amp; Instructions
                       </label>
                       <textarea
                         rows={3}
@@ -749,14 +818,14 @@ export default function CreateQuestionPage() {
                       />
 
                       <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#94A3B8", marginBottom: 6 }}>
-                        Model Solution Code & Execution Test Assertions (Spacious Code Input)
+                        Model Solution Code &amp; Execution Test Assertions
                       </label>
                       <div style={{ position: "relative", background: "#090D16", border: "1px solid rgba(255, 255, 255, 0.15)", borderRadius: 8, overflow: "hidden" }}>
                         <textarea
                           rows={6}
                           value={q.correctAnswer || ""}
                           onChange={(e) => handleUpdatePreviewQuestion(qIdx, { correctAnswer: e.target.value })}
-                          placeholder={`// Model JavaScript / Python Solution Code:\nfunction solveProblem(input) {\n  // Solution algorithm logic...\n  return result;\n}`}
+                          placeholder={`// Model Solution Code:\nfunction solveProblem(input) {\n  return input;\n}`}
                           style={{
                             width: "100%",
                             background: "#090D16",
@@ -874,7 +943,6 @@ export default function CreateQuestionPage() {
                         />
                       </div>
 
-                      {/* Student Text Input Simulation Box */}
                       <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 14, marginBottom: 14 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>
@@ -936,7 +1004,7 @@ export default function CreateQuestionPage() {
                       </div>
 
                       <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                        Options & Correct Answer Selection (Click radio button to select correct option)
+                        Options &amp; Correct Answer Selection (Click radio button to select correct option)
                       </label>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         {(q.options || []).map((opt: any, oIdx: number) => {
@@ -1174,7 +1242,7 @@ export default function CreateQuestionPage() {
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 28 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                 <Sparkles size={22} style={{ color: "var(--accent-light)" }} />
-                <h2 style={{ fontSize: 18, fontWeight: 700 }}>AI Topic & Concept Question Generator</h2>
+                <h2 style={{ fontSize: 18, fontWeight: 700 }}>AI Topic &amp; Concept Question Generator</h2>
               </div>
 
               <form onSubmit={handleAIGenerate} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -1265,7 +1333,7 @@ export default function CreateQuestionPage() {
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 28 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                 <Camera size={22} style={{ color: "var(--status-active)" }} />
-                <h2 style={{ fontSize: 18, fontWeight: 700 }}>Photo & Textbook OCR (GPT-4o Vision)</h2>
+                <h2 style={{ fontSize: 18, fontWeight: 700 }}>Photo &amp; Textbook OCR (GPT-4o Vision)</h2>
               </div>
 
               <form onSubmit={handleAIGenerate} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -1372,7 +1440,7 @@ export default function CreateQuestionPage() {
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 28 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                 <FileText size={22} style={{ color: "var(--status-info)" }} />
-                <h2 style={{ fontSize: 18, fontWeight: 700 }}>Lecture Notes, PDF & Document Reader</h2>
+                <h2 style={{ fontSize: 18, fontWeight: 700 }}>Lecture Notes, PDF &amp; Document Reader</h2>
               </div>
 
               <form onSubmit={handleAIGenerate} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -1483,10 +1551,10 @@ export default function CreateQuestionPage() {
             </div>
           )}
 
-          {/* TAB 4: MANUAL ENTRY WITH AI ENHANCER */}
+          {/* TAB 4: MANUAL ENTRY WITH DYNAMIC FORM & MULTI-QUESTION BATCHING */}
           {activeTab === "manual" && (
             <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 28 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <PenTool size={22} style={{ color: "var(--accent-light)" }} />
                   <h2 style={{ fontSize: 18, fontWeight: 700 }}>Manual Question Creator</h2>
@@ -1564,16 +1632,21 @@ export default function CreateQuestionPage() {
                     placeholder={
                       questionType === "fill_in_blank"
                         ? "The CPU stands for [Central Processing Unit] and RAM stands for [Random Access Memory]."
-                        : "Enter question sentence..."
+                        : questionType === "coding"
+                        ? "Write a function solution(nums) in Python that returns the sum of even numbers..."
+                        : "Enter question prompt..."
                     }
                     style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, color: "var(--text-primary)", fontSize: 13 }}
                     required
                   />
                 </div>
 
+                {/* DYNAMIC FORM FIELDS BASED ON QUESTION MODE */}
+
+                {/* 1. MCQ MODE */}
                 {questionType === "MCQ" && (
                   <div>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Multiple Choice Options (Select Correct Option)</label>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Multiple Choice Options (Select Radio Button for Correct Answer)</label>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                       {options.map((opt, idx) => (
                         <div key={idx} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1598,6 +1671,135 @@ export default function CreateQuestionPage() {
                           />
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. TRUE / FALSE MODE */}
+                {questionType === "true_false" && (
+                  <div>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                      Select Correct True/False Answer
+                    </label>
+                    <div style={{ display: "flex", gap: 14 }}>
+                      {["True", "False"].map((tfVal) => {
+                        const isSelected = tfAnswer === tfVal;
+                        return (
+                          <button
+                            key={tfVal}
+                            type="button"
+                            onClick={() => setTfAnswer(tfVal as any)}
+                            style={{
+                              flex: 1,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 8,
+                              padding: "12px 20px",
+                              borderRadius: 10,
+                              background: isSelected ? "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2))" : "var(--bg-elevated)",
+                              border: `1.5px solid ${isSelected ? "var(--accent)" : "var(--border)"}`,
+                              color: isSelected ? "var(--accent-light)" : "var(--text-primary)",
+                              fontSize: 14,
+                              fontWeight: isSelected ? 700 : 500,
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="tfAnswerGroup"
+                              checked={isSelected}
+                              readOnly
+                              style={{ accentColor: "var(--accent)", width: 16, height: 16 }}
+                            />
+                            {tfVal}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. FILL IN THE BLANKS MODE */}
+                {questionType === "fill_in_blank" && (
+                  <div>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                      Target Blank Word / Answer Term
+                    </label>
+                    <input
+                      type="text"
+                      value={targetBlankTerm}
+                      onChange={(e) => setTargetBlankTerm(e.target.value)}
+                      placeholder="e.g. Central Processing Unit"
+                      style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "var(--text-primary)", fontSize: 13 }}
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* 4. SHORT ANSWER MODE */}
+                {questionType === "short_answer" && (
+                  <div>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                      Expected Answer Key / Model Key Terms
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={shortAnswerKey}
+                      onChange={(e) => setShortAnswerKey(e.target.value)}
+                      placeholder="Enter required keywords or model answer..."
+                      style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, color: "var(--text-primary)", fontSize: 13 }}
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* 5. ESSAY MODE */}
+                {questionType === "essay" && (
+                  <div>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                      Essay Grading Rubric &amp; Expected Criteria
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={essayRubric}
+                      onChange={(e) => setEssayRubric(e.target.value)}
+                      placeholder="Enter essay grading criteria, key arguments, and evaluation rubric..."
+                      style={{ width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, color: "var(--text-primary)", fontSize: 13 }}
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* 6. CODING SANDBOX MODE */}
+                {questionType === "coding" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                        Initial Starter Code Template
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={initialCode}
+                        onChange={(e) => setInitialCode(e.target.value)}
+                        placeholder={`function solution(input) {\n  // Write solution here\n}`}
+                        style={{ width: "100%", background: "#0F172A", border: "1px solid rgba(99, 102, 241, 0.4)", borderRadius: 8, padding: 12, color: "#38BDF8", fontFamily: "monospace", fontSize: 13 }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                        Expected Model Solution Code / Output Test Case
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={codeSolution}
+                        onChange={(e) => setCodeSolution(e.target.value)}
+                        placeholder={`function solution(input) {\n  return input.reduce((a, b) => a + b, 0);\n}`}
+                        style={{ width: "100%", background: "#0F172A", border: "1px solid rgba(99, 102, 241, 0.4)", borderRadius: 8, padding: 12, color: "#4ADE80", fontFamily: "monospace", fontSize: 13 }}
+                        required
+                      />
                     </div>
                   </div>
                 )}
@@ -1633,7 +1835,7 @@ export default function CreateQuestionPage() {
                       cursor: "pointer",
                     }}
                   >
-                    <Plus size={16} /> Add Question to Draft Preview Studio
+                    <Plus size={16} /> Add Question to Batch Draft Studio
                   </button>
 
                   <button
@@ -1688,7 +1890,7 @@ export default function CreateQuestionPage() {
               onClick={handleConfirmPreviewDelete}
               style={{ padding: "8px 20px", background: "linear-gradient(135deg, #EF4444, #DC2626)", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
             >
-              Confirm & Delete
+              Confirm &amp; Delete
             </button>
           </>
         }

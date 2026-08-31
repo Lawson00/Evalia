@@ -152,7 +152,7 @@ export function ResultsPage() {
             <Trophy size={20} />
           </div>
           <div>
-            <strong className="stat-value">{avgScore}%</strong>
+            <strong className="stat-value">{loading ? "..." : `${avgScore}%`}</strong>
             <p className="stat-label">Overall Average</p>
           </div>
         </div>
@@ -161,7 +161,7 @@ export function ResultsPage() {
             <Award size={20} />
           </div>
           <div>
-            <strong className="stat-value">{bestScore}%</strong>
+            <strong className="stat-value">{loading ? "..." : `${bestScore}%`}</strong>
             <p className="stat-label">Best Score</p>
           </div>
         </div>
@@ -170,7 +170,7 @@ export function ResultsPage() {
             <BarChart3 size={20} />
           </div>
           <div>
-            <strong className="stat-value">{resultsList.length}</strong>
+            <strong className="stat-value">{loading ? "..." : resultsList.length}</strong>
             <p className="stat-label">Assignments Completed</p>
           </div>
         </div>

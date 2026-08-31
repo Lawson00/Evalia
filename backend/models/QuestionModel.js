@@ -380,12 +380,16 @@ class QuestionModel {
       if (correctObj) cleanCorrect = correctObj.label;
     }
 
+    const VALID_DIFFICULTIES = ["easy", "medium", "hard"];
+    const rawDiff = (difficulty || "medium").toLowerCase();
+    const cleanDiff = VALID_DIFFICULTIES.includes(rawDiff) ? rawDiff : "medium";
+
     const insertPayload = {
       question_text: cleanPrompt,
       type: type || "MCQ",
       options: cleanOptions || [],
       correct_answer: cleanCorrect || (Array.isArray(cleanOptions) ? cleanOptions[0] : "Option A"),
-      difficulty: (difficulty || "medium").toLowerCase(),
+      difficulty: cleanDiff,
       points: Number(points) || 2,
       explanation: explanation || "",
     };
@@ -561,7 +565,10 @@ class QuestionModel {
       }
     }
     if (updates.correctAnswer) payload.correct_answer = updates.correctAnswer;
-    if (updates.difficulty) payload.difficulty = updates.difficulty.toLowerCase();
+    if (updates.difficulty) {
+      const d = updates.difficulty.toLowerCase();
+      payload.difficulty = ["easy", "medium", "hard"].includes(d) ? d : "medium";
+    }
     if (updates.points !== undefined) payload.points = Number(updates.points);
     if (updates.explanation !== undefined) payload.explanation = updates.explanation;
 

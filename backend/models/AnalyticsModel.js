@@ -3,18 +3,33 @@ const { supabaseAdmin } = require("../config/supabase");
 class AnalyticsModel {
   static async getOverview(lecturerId) {
     try {
-      // 1. Total Classes
+      // 1. Fetch Lecturer Class IDs
       let classQuery = supabaseAdmin.from("classes").select("id", { count: "exact" });
-      if (lecturerId && lecturerId !== "usr-lawson-test") classQuery = classQuery.eq("lecturer_id", lecturerId);
-      const { count: classCount } = await classQuery;
+      if (lecturerId && lecturerId !== "usr-lawson-test") {
+        classQuery = classQuery.eq("lecturer_id", lecturerId);
+      }
+      const { data: classData, count: classCount } = await classQuery;
+      const lecturerClassIds = (classData || []).map((c) => c.id);
 
-      // 2. Total Subscribed Students
-      const { count: studentCount } = await supabaseAdmin.from("class_enrollments").select("id", { count: "exact" });
+      // 2. Total Subscribed Students attached ONLY to this lecturer's classes
+      let totalSubscribedStudentsCount = 0;
+      if (lecturerClassIds.length > 0) {
+        const { data: enrollments } = await supabaseAdmin
+          .from("class_enrollments")
+          .select("student_id")
+          .in("class_id", lecturerClassIds);
+        const uniqueStudents = new Set((enrollments || []).map((e) => e.student_id));
+        totalSubscribedStudentsCount = uniqueStudents.size;
+      }
 
       // 3. Total Active Assignments
-      const { count: asgnCount } = await supabaseAdmin.from("assignments").select("id", { count: "exact" });
+      let asgnQuery = supabaseAdmin.from("assignments").select("id", { count: "exact" });
+      if (lecturerId && lecturerId !== "usr-lawson-test") {
+        asgnQuery = asgnQuery.eq("created_by", lecturerId);
+      }
+      const { count: asgnCount } = await asgnQuery;
 
-      // 4. Completed Attempts & Class Average Accuracy %
+      // 4. Completed Attempts & Accuracy
       const { data: attempts } = await supabaseAdmin
         .from("assessment_attempts")
         .select("earned_score, total_points, percentage, status")
@@ -36,7 +51,7 @@ class AnalyticsModel {
 
       return {
         totalClassesCount: classCount || 0,
-        totalSubscribedStudentsCount: studentCount || 0,
+        totalSubscribedStudentsCount: totalSubscribedStudentsCount || 0,
         totalActiveAssignmentsCount: asgnCount || 0,
         classAverageAccuracyPercent: avgAccuracy,
         totalTestsCompleted: totalAttemptsCount || 0,
@@ -57,60 +72,85 @@ class AnalyticsModel {
 
   static async getDashboardData(lecturerId) {
     try {
-      // 1. Fetch Assignments
-      const { data: assignmentsData } = await supabaseAdmin
+      // 1. Fetch Lecturer Class IDs
+      let classQuery = supabaseAdmin.from("classes").select("id");
+      if (lecturerId && lecturerId !== "usr-lawson-test") {
+        classQuery = classQuery.eq("lecturer_id", lecturerId);
+      }
+      const { data: classData } = await classQuery;
+      const lecturerClassIds = (classData || []).map((c) => c.id);
+
+      // 2. Fetch Assignments Filtered to Lecturer
+      let asgnQuery = supabaseAdmin
         .from("assignments")
         .select("*, classes(name, course_code), assessment_attempts(*)")
         .order("created_at", { ascending: false });
 
+      if (lecturerId && lecturerId !== "usr-lawson-test") {
+        if (lecturerClassIds.length > 0) {
+          asgnQuery = asgnQuery.or(`created_by.eq.${lecturerId},class_id.in.(${lecturerClassIds.join(",")})`);
+        } else {
+          asgnQuery = asgnQuery.eq("created_by", lecturerId);
+        }
+      }
+
+      const { data: assignmentsData } = await asgnQuery;
       const assignments = assignmentsData || [];
       const totalAssignments = assignments.length;
       const activeAssignments = assignments.filter((a) => a.status === "active");
       const activeAssignmentsCount = activeAssignments.length;
 
-      // 2. Fetch Enrolled Students Count
-      const { count: studentCount } = await supabaseAdmin
-        .from("users")
-        .select("id", { count: "exact" })
-        .eq("role", "student");
+      // 3. Fetch Real Total Enrolled Students Attached ONLY to THIS Lecturer's Classes
+      let totalEnrolledStudents = 0;
+      if (lecturerClassIds.length > 0) {
+        const { data: enrollments } = await supabaseAdmin
+          .from("class_enrollments")
+          .select("student_id")
+          .in("class_id", lecturerClassIds);
+        const uniqueStudents = new Set((enrollments || []).map((e) => e.student_id));
+        totalEnrolledStudents = uniqueStudents.size;
+      }
 
-      const { count: enrollmentCount } = await supabaseAdmin
-        .from("class_enrollments")
-        .select("id", { count: "exact" });
+      // 4. Fetch Assessment Attempts for Lecturer's Assignments
+      const lecturerAssignmentIds = assignments.map((a) => a.id);
+      let attempts = [];
+      if (lecturerAssignmentIds.length > 0) {
+        const { data: aData } = await supabaseAdmin
+          .from("assessment_attempts")
+          .select("*, users(first_name, last_name, email), assignments(title, pass_mark)")
+          .in("assignment_id", lecturerAssignmentIds)
+          .order("started_at", { ascending: false });
+        attempts = aData || [];
+      }
 
-      const totalEnrolledStudents = Math.max(studentCount || 0, enrollmentCount || 0, 6);
-
-      // 3. Fetch Assessment Attempts
-      const { data: attemptsData } = await supabaseAdmin
-        .from("assessment_attempts")
-        .select("*, users(first_name, last_name, email), assignments(title)")
-        .order("started_at", { ascending: false });
-
-      const attempts = attemptsData || [];
       const completedAttempts = attempts.filter((a) => a.status === "submitted" || a.status === "completed");
       const totalSubmissions = completedAttempts.length;
 
       let passRatePct = "0.0%";
       if (completedAttempts.length > 0) {
         const passedCount = completedAttempts.filter((a) => {
-          const passMark = Number(a.pass_mark) || 70;
+          const passMark = Number(a.assignments?.pass_mark || a.pass_mark) || 70;
           const pct = Number(a.percentage) || (a.total_points > 0 ? (a.earned_score / a.total_points) * 100 : 0);
           return pct >= passMark;
         }).length;
         passRatePct = `${((passedCount / completedAttempts.length) * 100).toFixed(1)}%`;
       } else {
-        passRatePct = "78.5%";
+        passRatePct = "0.0%";
       }
 
-      // 4. Fetch Proctoring Logs
-      const { data: pLogs } = await supabaseAdmin
-        .from("proctoring_logs")
-        .select("*, assessment_attempts(*, users(first_name, last_name, email), assignments(title))")
-        .order("logged_at", { ascending: false });
+      // 5. Fetch Proctoring Logs for Lecturer's Assignments
+      let proctoringLogs = [];
+      if (attempts.length > 0) {
+        const attemptIds = attempts.map((att) => att.id);
+        const { data: pLogs } = await supabaseAdmin
+          .from("proctoring_logs")
+          .select("*, assessment_attempts(*, users(first_name, last_name, email), assignments(title))")
+          .in("attempt_id", attemptIds)
+          .order("logged_at", { ascending: false });
+        proctoringLogs = pLogs || [];
+      }
 
-      const proctoringLogs = pLogs || [];
-
-      // 5. Build Sparkline Data (Last 7 Days)
+      // 6. Build Sparkline Data (Last 7 Days)
       const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       const last7DaysMap = {};
       const today = new Date();
@@ -132,7 +172,7 @@ class AnalyticsModel {
 
       const sparkData = Object.values(last7DaysMap);
 
-      // 6. Build Live Assignments Progress List
+      // 7. Build Live Assignments Progress List
       const liveAssignments = activeAssignments.slice(0, 5).map((a) => {
         const asgnAttempts = Array.isArray(a.assessment_attempts) ? a.assessment_attempts : [];
         const activeStudents = asgnAttempts.filter((att) => att.status === "in_progress").length;
@@ -150,7 +190,7 @@ class AnalyticsModel {
         };
       });
 
-      // 7. Build Recent Activity Stream
+      // 8. Build Recent Activity Stream
       const recentActivity = [];
 
       attempts.slice(0, 5).forEach((att, idx) => {
@@ -182,7 +222,7 @@ class AnalyticsModel {
         });
       });
 
-      // 8. Build Upcoming Assignments List
+      // 9. Build Upcoming Assignments List
       const upcomingAssignments = assignments
         .filter((a) => a.status === "published" || a.status === "draft" || new Date(a.scheduled_start) > today)
         .slice(0, 5)
