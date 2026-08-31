@@ -40,7 +40,7 @@ function AuthContent({ role, initialMode }: { role: Role; initialMode?: "signin"
   const searchParams = useSearchParams();
   const modeParam = searchParams.get("mode");
 
-  const { login, registerLecturer, registerStudent } = useAuth();
+  const { user, login, registerLecturer, registerStudent, logout } = useAuth();
   
   const defaultMode = modeParam === "signup" || initialMode === "signup" ? "signup" : "signin";
   const [authMode, setAuthMode] = useState<"signin" | "signup">(defaultMode);
@@ -50,6 +50,14 @@ function AuthContent({ role, initialMode }: { role: Role; initialMode?: "signin"
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const details = content[role];
+
+  // Auto-redirect or show session switch option if already logged in
+  const isCorrectRoleLoggedIn = user && (
+    (role === "admin" && (user.role === "lecturer" || user.role === "admin")) ||
+    (role === "candidate" && user.role === "student")
+  );
+
+  const isOtherRoleLoggedIn = user && !isCorrectRoleLoggedIn;
 
   // Google OAuth Initiator
   const handleGoogleAuth = () => {
@@ -146,8 +154,50 @@ function AuthContent({ role, initialMode }: { role: Role; initialMode?: "signin"
           <p className="auth-card-copy">
             {authMode === "signin"
               ? role === "admin" ? "Sign in to access your lecturer dashboard" : "Sign in to access your student portal"
-              : "Register your lecturer credentials to manage assessments"}
+              : "Register your credentials to manage assessments"}
           </p>
+
+          {isOtherRoleLoggedIn && (
+            <div
+              style={{
+                background: "rgba(245, 158, 11, 0.12)",
+                border: "1px solid var(--status-warn)",
+                borderRadius: 10,
+                padding: "12px 14px",
+                marginBottom: 16,
+                fontSize: 13,
+                color: "var(--text-primary)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, color: "var(--status-warn)" }}>
+                <AlertCircle size={16} /> Signed in as {user.role === "lecturer" || user.role === "admin" ? "Lecturer" : "Student"} ({user.fullName || user.email})
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                You are accessing the {role === "admin" ? "Lecturer Portal" : "Student Portal"}. To sign in or register with a {role === "admin" ? "Lecturer" : "Student"} account, log out of your active session.
+              </div>
+              <button
+                type="button"
+                onClick={logout}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 6,
+                  background: "var(--status-warn)",
+                  color: "#000",
+                  fontWeight: 600,
+                  fontSize: 12,
+                  border: "none",
+                  cursor: "pointer",
+                  alignSelf: "flex-start",
+                  marginTop: 4,
+                }}
+              >
+                Log Out & Switch Account
+              </button>
+            </div>
+          )}
 
 
 

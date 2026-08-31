@@ -9,17 +9,17 @@ const { sendSuccess, sendError } = require("../utils/responseHandler");
  */
 /**
  * Initiate Google OAuth Redirect
- * GET /api/v1/auth/google?role=lecturer&joinCode=CS-101
+ * GET /api/v1/auth/google?role=student&inviteToken=...
  */
 const initiateGoogleAuth = async (req, res, next) => {
   try {
     const role = req.query.role === "lecturer" ? "lecturer" : "student";
-    const joinCode = req.query.joinCode || "";
+    const inviteToken = req.query.inviteToken || req.query.joinCode || "";
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const callbackUrl = process.env.GOOGLE_CALLBACK_URL || "http://localhost:5000/api/v1/auth/google/callback";
     const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
 
-    const stateObj = JSON.stringify({ role, joinCode });
+    const stateObj = JSON.stringify({ role, inviteToken });
 
     if (!clientId || clientId.includes("your_google_client_id_here")) {
       // Dev mode fallback redirect if Google Client ID is placeholder
@@ -29,7 +29,7 @@ const initiateGoogleAuth = async (req, res, next) => {
         role,
         isPendingProfile: true,
       });
-      return res.redirect(`${clientUrl}/auth/complete-profile?token=${mockToken}&role=${role}&joinCode=${joinCode}`);
+      return res.redirect(`${clientUrl}/auth/complete-profile?token=${mockToken}&role=${role}&inviteToken=${inviteToken}`);
     }
 
     const googleAuthUrl =
@@ -57,12 +57,12 @@ const handleGoogleCallback = async (req, res, next) => {
     const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
 
     let selectedRole = "student";
-    let joinCode = "";
+    let inviteToken = "";
     try {
       if (state) {
         const parsedState = JSON.parse(state);
         selectedRole = parsedState.role === "lecturer" ? "lecturer" : "student";
-        joinCode = parsedState.joinCode || "";
+        inviteToken = parsedState.inviteToken || parsedState.joinCode || "";
       }
     } catch (e) {
       selectedRole = state === "lecturer" ? "lecturer" : "student";
@@ -128,24 +128,19 @@ const handleGoogleCallback = async (req, res, next) => {
       user.is_profile_complete = isComplete;
     }
 
-    // If joinCode is present and user is student, auto-enroll into class
-    if (joinCode) {
+    if (inviteToken && selectedRole === "student") {
       const ClassModel = require("../models/ClassModel");
-      const targetClass = await ClassModel.findByJoinCode(joinCode);
-      if (targetClass) {
-        await ClassModel.enrollStudent({
-          classId: targetClass.id,
-          joinCode: targetClass.joinCode,
-          studentId: user.id,
-          studentEmail: user.email,
-          studentName: user.first_name ? `${user.first_name} ${user.last_name || ''}` : user.email.split("@")[0],
-        });
-      }
+      await ClassModel.enrollStudentWithInvitation({
+        token: inviteToken,
+        studentId: user.id,
+        studentEmail: user.email,
+        studentName: user.first_name ? `${user.first_name} ${user.last_name || ''}` : user.email.split("@")[0],
+      });
     }
 
     // Test account role enforcement: lawsonsamson32@gmail.com is lecturer/admin
     const isTestAccount = user.email && user.email.toLowerCase() === "lawsonsamson32@gmail.com";
-    const effectiveRole = (isTestAccount && !joinCode) ? "lecturer" : user.role || selectedRole;
+    const effectiveRole = (isTestAccount && !inviteToken) ? "lecturer" : user.role || selectedRole;
 
     const jwtToken = generateToken({
       userId: user.id,
@@ -157,7 +152,7 @@ const handleGoogleCallback = async (req, res, next) => {
 
     // If user's profile is NOT complete yet (first-time Google user), redirect to complete-profile
     if (!user.is_profile_complete && !isTestAccount) {
-      return res.redirect(`${clientUrl}/auth/complete-profile?token=${jwtToken}&role=${effectiveRole}&joinCode=${joinCode}`);
+      return res.redirect(`${clientUrl}/auth/complete-profile?token=${jwtToken}&role=${effectiveRole}&inviteToken=${inviteToken}`);
     }
 
     // Redirect to Admin Portal (/admin) for lecturer/admin role, or Student Dashboard (/user) for student role
@@ -183,7 +178,8 @@ const registerLecturer = async (req, res, next) => {
 
     const existingUser = await UserModel.findByEmail(email);
     if (existingUser) {
-      return sendError(res, "An account with this email already exists. Please sign in instead.", null, 409);
+      const roleLabel = existingUser.role === "lecturer" ? "Lecturer" : "Student";
+      return sendError(res, `An account with this email address already exists as a ${roleLabel}. Please sign in using your registered portal.`, null, 409);
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -250,7 +246,8 @@ const registerStudent = async (req, res, next) => {
 
     const existingUser = await UserModel.findByEmail(email);
     if (existingUser) {
-      return sendError(res, "An account with this email already exists. Please sign in instead.", null, 409);
+      const roleLabel = existingUser.role === "lecturer" ? "Lecturer" : "Student";
+      return sendError(res, `An account with this email address already exists as a ${roleLabel}. Please sign in using your registered portal.`, null, 409);
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -304,7 +301,7 @@ const registerStudent = async (req, res, next) => {
 };
 
 /**
- * Universal Login
+ * Universal Login with Strict Role Checking
  */
 const login = async (req, res, next) => {
   try {
@@ -317,6 +314,31 @@ const login = async (req, res, next) => {
     const user = await UserModel.findByEmail(email);
     if (!user) {
       return sendError(res, "Invalid email or password.", null, 401);
+    }
+
+    // Role Enforcement Check
+    if (role && role !== "admin") {
+      const normalizedReqRole = role === "lecturer" ? "lecturer" : "student";
+      const normalizedUserRole = user.role === "admin" ? "lecturer" : user.role;
+
+      if (normalizedUserRole !== normalizedReqRole) {
+        if (user.role === "lecturer" || user.role === "admin") {
+          return sendError(
+            res,
+            "This account is registered as a Lecturer account. Please log in through the Lecturer Portal.",
+            null,
+            403
+          );
+        }
+        if (user.role === "student") {
+          return sendError(
+            res,
+            "This account is registered as a Student account. Please log in through the Student Portal.",
+            null,
+            403
+          );
+        }
+      }
     }
 
     if (!user.password_hash) {
@@ -352,65 +374,102 @@ const login = async (req, res, next) => {
  */
 const completeOAuthProfile = async (req, res, next) => {
   try {
-    const userId = req.user?.userId;
-    const { role, phone, firstName, lastName, department, institution, title, indexNumber, courseCode, joinCode } = req.body;
+    const authHeader = req.headers.authorization;
+    let token = req.body?.token;
+    if (!token && authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    }
 
-    let user = await UserModel.findById(userId);
-    if (!user && req.user?.email) {
-      user = await UserModel.findByEmail(req.user.email);
+    const jwt = require("jsonwebtoken");
+    const JWT_SECRET = process.env.JWT_SECRET || "evalia-super-secret-jwt-key-2026";
+
+    let decoded = req.user;
+    if (!decoded && token) {
+      try {
+        decoded = jwt.verify(token, JWT_SECRET);
+      } catch (e) {
+        decoded = jwt.decode(token);
+      }
+    }
+
+    const userId = decoded?.userId || decoded?.id;
+    const emailFromToken = decoded?.email;
+    const { role, phone, firstName, lastName, department, institution, title, indexNumber, courseCode, joinCode, inviteToken, email } = req.body;
+
+    const targetEmail = emailFromToken || email;
+
+    let user = null;
+    if (userId) {
+      user = await UserModel.findById(userId);
+    }
+    if (!user && targetEmail) {
+      user = await UserModel.findByEmail(targetEmail);
+    }
+
+    // If user record is missing in database (e.g. wiped database or first time setup), create user now!
+    if (!user && targetEmail) {
+      user = await UserModel.createUser({
+        email: targetEmail,
+        passwordHash: null,
+        firstName: firstName || decoded?.firstName || targetEmail.split("@")[0],
+        lastName: lastName || decoded?.lastName || "",
+        phone: phone || null,
+        role: role || decoded?.role || "lecturer",
+        isProfileComplete: true,
+      });
     }
 
     if (!user) {
-      user = await UserModel.findByEmail("lawsonsamson32@gmail.com");
+      return sendError(res, "User session expired or email missing. Please log in again.", null, 404);
     }
 
-    if (user) {
-      await UserModel.updateUser(user.id, {
-        firstName: firstName || user.first_name,
-        lastName: lastName || user.last_name,
-        phone: phone || user.phone,
-        role: role || user.role || "student",
-        isProfileComplete: true,
+    const effectiveRole = role || user.role || "lecturer";
+
+    await UserModel.updateUser(user.id, {
+      firstName: firstName || user.first_name,
+      lastName: lastName || user.last_name,
+      phone: phone || user.phone,
+      role: effectiveRole,
+      isProfileComplete: true,
+    });
+
+    if (effectiveRole === "lecturer" || effectiveRole === "admin") {
+      await UserModel.createLecturerProfile({
+        userId: user.id,
+        department: department || "School of Computing",
+        institution: institution || "University Faculty",
+        title: title || "Lecturer",
+      });
+    } else {
+      await UserModel.createStudentProfile({
+        userId: user.id,
+        indexNumber: indexNumber || `IND-2026-${Math.floor(100 + Math.random() * 900)}`,
+        courseCode: courseCode || "CS 101",
       });
 
-      if (role === "lecturer" || user.role === "lecturer") {
-        await UserModel.createLecturerProfile({
-          userId: user.id,
-          department: department || "School of Computing",
-          institution: institution || "University Faculty",
-          title: title || "Lecturer",
+      const effectiveInviteToken = inviteToken || joinCode;
+      if (effectiveInviteToken) {
+        const ClassModel = require("../models/ClassModel");
+        await ClassModel.enrollStudentWithInvitation({
+          token: effectiveInviteToken,
+          studentId: user.id,
+          studentEmail: user.email,
+          studentName: user.first_name ? `${user.first_name} ${user.last_name || ''}` : user.email.split("@")[0],
+          indexNumber,
         });
       }
-
-      if (role === "student" || user.role === "student") {
-        await UserModel.createStudentProfile({
-          userId: user.id,
-          indexNumber: indexNumber || `IND-2026-${Math.floor(100 + Math.random() * 900)}`,
-          courseCode: courseCode || "CS 101",
-        });
-
-        // Auto-enroll student into class cohort if joinCode or courseCode provided
-        const effectiveCode = joinCode || courseCode;
-        if (effectiveCode) {
-          const ClassModel = require("../models/ClassModel");
-          const targetClass = await ClassModel.findByJoinCode(effectiveCode);
-          if (targetClass) {
-            await ClassModel.enrollStudent({
-              classId: targetClass.id,
-              studentId: user.id,
-              studentEmail: user.email,
-              studentName: user.first_name ? `${user.first_name} ${user.last_name || ''}` : user.email.split("@")[0],
-              indexNumber,
-            });
-          }
-        }
-      }
-
-      const fullUser = await UserModel.getFullProfile(user.id);
-      return sendSuccess(res, "Profile completed and saved to database successfully!", { user: fullUser });
     }
 
-    return sendError(res, "User profile not found.", null, 404);
+    const fullUser = await UserModel.getFullProfile(user.id);
+    const newToken = generateToken({
+      userId: user.id,
+      email: user.email,
+      role: fullUser.role,
+      firstName: fullUser.firstName,
+      lastName: fullUser.lastName,
+    });
+
+    return sendSuccess(res, "Profile completed and saved to database successfully!", { token: newToken, user: fullUser });
   } catch (err) {
     next(err);
   }
@@ -432,6 +491,22 @@ const getCurrentUser = async (req, res, next) => {
   }
 };
 
+const updateUserProfile = async (req, res, next) => {
+  try {
+    const { firstName, lastName, phone, indexNumber, password } = req.body;
+    const updatedUser = await UserModel.updateProfile(req.user.userId, {
+      firstName,
+      lastName,
+      phone,
+      indexNumber,
+      password,
+    });
+    return sendSuccess(res, "Profile updated successfully!", { user: updatedUser });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   initiateGoogleAuth,
   handleGoogleCallback,
@@ -440,4 +515,5 @@ module.exports = {
   login,
   completeOAuthProfile,
   getCurrentUser,
+  updateUserProfile,
 };

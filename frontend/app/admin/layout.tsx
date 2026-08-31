@@ -1,14 +1,19 @@
-import type { Metadata } from "next";
+"use client";
+
+import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/admin/Sidebar";
 import { TopBar } from "@/components/admin/TopBar";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
-export const metadata: Metadata = {
-  title: "Lecturer Hub – Evalia",
-  description: "Evalia lecturer administration and assignment portal",
-};
+export default function AdminLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const isPublicRoute = pathname === "/admin/login" || pathname.startsWith("/admin/login/");
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  if (isPublicRoute) {
+    return <>{children}</>;
+  }
+
   return (
     <ProtectedRoute allowedRoles={["lecturer", "admin"]}>
       <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>

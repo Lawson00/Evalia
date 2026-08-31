@@ -2,17 +2,13 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
   BookOpen,
   GraduationCap,
-  ArrowRight,
+  ChevronRight,
   ShieldCheck,
-  UserCheck,
-  Sparkles,
 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
-import { Badge } from "@/components/ui/Badge";
 
 interface Props {
   open: boolean;
@@ -24,154 +20,213 @@ export function LoginRoleModal({ open, onClose }: Props) {
 
   const handleLecturerLogin = () => {
     onClose();
-    router.push("/admin/login");
+    router.push("/auth/admin");
   };
 
   const handleStudentLogin = () => {
     onClose();
-    router.push("/user/login");
+    router.push("/auth/candidate");
   };
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Choose Your Login Portal"
-      width={560}
+      title="Select Your Login Portal"
+      width={540}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <p style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center" }}>
-          Select your role to access your personalized Evalia dashboard:
+      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <p style={{ fontSize: 13, color: "#64748b", margin: 0, lineHeight: 1.5 }}>
+          Welcome to <strong style={{ color: "#1d2536" }}>Evalia</strong>. Please select your portal role to sign in to your workspace:
         </p>
 
-        {/* Choice 1: Lecturer / Admin Login */}
-        <div
-          onClick={handleLecturerLogin}
-          style={{
-            background: "var(--bg-elevated)",
-            border: "1px solid var(--border)",
-            borderRadius: 12,
-            padding: 20,
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
-            (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
-            (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 24px rgba(99, 102, 241, 0.2)";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
-            (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
-            (e.currentTarget as HTMLElement).style.boxShadow = "none";
-          }}
-        >
-          <div
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: 12,
-              background: "linear-gradient(135deg, #6366F1, #8B5CF6)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#fff",
-              flexShrink: 0,
-              boxShadow: "0 4px 12px rgba(99, 102, 241, 0.35)",
-            }}
-          >
-            <BookOpen size={26} />
-          </div>
-
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>
-                Lecturer / Administrator Login
-              </h3>
-              <Badge variant="accent" size="sm">Staff</Badge>
-            </div>
-            <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              Create classes, auto-generate AI questions, schedule assignments & monitor student performance live.
-            </p>
-          </div>
-
-          <ArrowRight size={18} style={{ color: "var(--accent-light)" }} />
-        </div>
-
-        {/* Choice 2: Student / Candidate Login */}
+        {/* Choice 1: Student / Candidate Login Card */}
         <div
           onClick={handleStudentLogin}
           style={{
-            background: "var(--bg-elevated)",
-            border: "1px solid var(--border)",
-            borderRadius: 12,
-            padding: 20,
+            background: "#ffffff",
+            border: "1.5px solid #cbd5e1",
+            borderRadius: 14,
+            padding: "18px 20px",
             display: "flex",
             alignItems: "center",
             gap: 16,
             cursor: "pointer",
             transition: "all 0.2s ease",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.borderColor = "var(--status-active)";
+            (e.currentTarget as HTMLElement).style.borderColor = "#10b981";
             (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
-            (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 24px rgba(16, 185, 129, 0.2)";
+            (e.currentTarget as HTMLElement).style.boxShadow = "0 10px 24px rgba(16, 185, 129, 0.15)";
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+            (e.currentTarget as HTMLElement).style.borderColor = "#cbd5e1";
             (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
-            (e.currentTarget as HTMLElement).style.boxShadow = "none";
+            (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.02)";
           }}
         >
           <div
             style={{
               width: 52,
               height: 52,
-              borderRadius: 12,
-              background: "linear-gradient(135deg, #10B981, #059669)",
+              borderRadius: 14,
+              background: "linear-gradient(135deg, #10b981, #059669)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               color: "#fff",
               flexShrink: 0,
-              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.35)",
+              boxShadow: "0 6px 16px rgba(16, 185, 129, 0.28)",
             }}
           >
             <GraduationCap size={28} />
           </div>
 
           <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>
-                Student / Candidate Login
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+              <h3 style={{ fontSize: 15.5, fontWeight: 800, color: "#1d2536", margin: 0 }}>
+                Student / Candidate Portal
               </h3>
-              <Badge variant="active" size="sm">Student</Badge>
+              <span
+                style={{
+                  background: "#dcfce7",
+                  color: "#15803d",
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: "2px 8px",
+                  borderRadius: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Student
+              </span>
             </div>
-            <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              Take assigned tests for your enrolled classes, view scores, and track your topic mastery.
+            <p style={{ fontSize: 12.5, color: "#64748b", margin: 0, lineHeight: 1.45 }}>
+              Take assigned exams, view grades, review lecturer feedback &amp; track topic mastery.
             </p>
           </div>
 
-          <ArrowRight size={18} style={{ color: "var(--status-active)" }} />
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              background: "#f0fdf4",
+              color: "#10b981",
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+            }}
+          >
+            <ChevronRight size={18} />
+          </div>
         </div>
 
-        {/* Informational Footer Note */}
+        {/* Choice 2: Lecturer / Administrator Login Card */}
         <div
+          onClick={handleLecturerLogin}
           style={{
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            padding: 12,
-            fontSize: 11,
-            color: "var(--text-muted)",
-            textAlign: "center",
-            marginTop: 4,
+            background: "#ffffff",
+            border: "1.5px solid #cbd5e1",
+            borderRadius: 14,
+            padding: "18px 20px",
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.borderColor = "#6255e7";
+            (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+            (e.currentTarget as HTMLElement).style.boxShadow = "0 10px 24px rgba(98, 85, 231, 0.15)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.borderColor = "#cbd5e1";
+            (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+            (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.02)";
           }}
         >
-          <strong>New Student Registration:</strong> Students cannot sign up directly without a class link. Ask your lecturer for your shareable class invite link (e.g. <code>evalia.com/join/CS-892X</code>) to register and join your class.
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 14,
+              background: "linear-gradient(135deg, #6255e7, #8b5cf6)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+              flexShrink: 0,
+              boxShadow: "0 6px 16px rgba(98, 85, 231, 0.28)",
+            }}
+          >
+            <BookOpen size={26} />
+          </div>
+
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+              <h3 style={{ fontSize: 15.5, fontWeight: 800, color: "#1d2536", margin: 0 }}>
+                Lecturer &amp; Administrator Portal
+              </h3>
+              <span
+                style={{
+                  background: "#f0efff",
+                  color: "#6255e7",
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: "2px 8px",
+                  borderRadius: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Staff
+              </span>
+            </div>
+            <p style={{ fontSize: 12.5, color: "#64748b", margin: 0, lineHeight: 1.45 }}>
+              Create class cohorts, generate AI assessments, monitor live proctoring &amp; view analytics.
+            </p>
+          </div>
+
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              background: "#f0efff",
+              color: "#6255e7",
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+            }}
+          >
+            <ChevronRight size={18} />
+          </div>
+        </div>
+
+        {/* Sub-footer Helper */}
+        <div
+          style={{
+            marginTop: 4,
+            padding: "12px 16px",
+            background: "#f8fafc",
+            borderRadius: 10,
+            border: "1px solid #e2e8f0",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            fontSize: 12,
+            color: "#64748b",
+          }}
+        >
+          <ShieldCheck size={16} style={{ color: "#6255e7", flexShrink: 0 }} />
+          <span>
+            Protected with AI proctoring and encrypted institution authentication.
+          </span>
         </div>
       </div>
     </Modal>

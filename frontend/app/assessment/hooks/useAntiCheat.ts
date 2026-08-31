@@ -21,12 +21,16 @@ export function useAntiCheat({
   assessmentId,
   attemptId,
   requireFullscreen,
+  detectTabSwitch = true,
+  disableCopyPaste = true,
   onEvent,
 }: {
   active: boolean;
   assessmentId: string;
   attemptId: string;
   requireFullscreen: boolean;
+  detectTabSwitch?: boolean;
+  disableCopyPaste?: boolean;
   onEvent: (event: IntegrityEvent) => void;
 }) {
   useEffect(() => {
@@ -44,26 +48,36 @@ export function useAntiCheat({
         timestamp: new Date().toISOString(),
       });
     const visibility = () => {
-      if (document.hidden) emit("TAB_SWITCH", "medium");
+      if (detectTabSwitch && document.hidden) emit("TAB_SWITCH", "medium");
     };
     const fullscreen = () => {
       if (requireFullscreen && !document.fullscreenElement)
         emit("FULLSCREEN_EXIT", "medium");
     };
-    const blur = () => emit("WINDOW_BLUR", "medium");
+    const blur = () => {
+      if (detectTabSwitch) emit("WINDOW_BLUR", "medium");
+    };
     const copy = (event: ClipboardEvent) => {
-      event.preventDefault();
-      emit("COPY_ATTEMPT", "low");
+      if (disableCopyPaste) {
+        event.preventDefault();
+        emit("COPY_ATTEMPT", "low");
+      }
     };
     const paste = (event: ClipboardEvent) => {
-      event.preventDefault();
-      emit("PASTE_ATTEMPT", "low");
+      if (disableCopyPaste) {
+        event.preventDefault();
+        emit("PASTE_ATTEMPT", "low");
+      }
     };
     const context = (event: MouseEvent) => {
-      event.preventDefault();
-      emit("CONTEXT_MENU", "low");
+      if (disableCopyPaste) {
+        event.preventDefault();
+        emit("CONTEXT_MENU", "low");
+      }
     };
-    const blockSelection = (event: Event) => event.preventDefault();
+    const blockSelection = (event: Event) => {
+      if (disableCopyPaste) event.preventDefault();
+    };
     const blockExitShortcut = (event: KeyboardEvent) => {
       const back =
         event.altKey &&
@@ -107,5 +121,5 @@ export function useAntiCheat({
       window.removeEventListener("keydown", blockExitShortcut, true);
       window.removeEventListener("popstate", stayOnAssessment);
     };
-  }, [active, assessmentId, attemptId, requireFullscreen, onEvent]);
+  }, [active, assessmentId, attemptId, requireFullscreen, detectTabSwitch, disableCopyPaste, onEvent]);
 }

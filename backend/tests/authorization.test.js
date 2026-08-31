@@ -8,9 +8,11 @@ const analyticsRoutes = require("../routes/analyticsRoutes");
 const classRoutes = require("../routes/classRoutes");
 const questionRoutes = require("../routes/questionRoutes");
 const searchRoutes = require("../routes/searchRoutes");
+const studentRoutes = require("../routes/studentRoutes");
 const { supabaseAdmin } = require("../config/supabase");
 const AssignmentModel = require("../models/AssignmentModel");
 const ClassModel = require("../models/ClassModel");
+const StudentDashboardModel = require("../models/StudentDashboardModel");
 const QuestionModel = require("../models/QuestionModel");
 const { generateToken } = require("../utils/tokenUtils");
 
@@ -23,6 +25,7 @@ const buildApp = () => {
   app.use(express.json());
   app.use("/classes", classRoutes);
   app.use("/assignments", assignmentRoutes);
+  app.use("/student", studentRoutes);
   app.use("/analytics", analyticsRoutes);
   app.use("/questions", questionRoutes);
   app.use("/search", searchRoutes);
@@ -100,6 +103,10 @@ const createQuery = (table, resolveResult) => {
       state.single = true;
       return Promise.resolve(resolveResult(state));
     },
+    maybeSingle() {
+      state.maybeSingle = true;
+      return Promise.resolve(resolveResult(state));
+    },
     then(resolve, reject) {
       return Promise.resolve(resolveResult(state)).then(resolve, reject);
     },
@@ -164,6 +171,46 @@ test("student can read their own class report through the ownership-aware model 
       assert.equal(response.body.data.report.studentId, studentA.userId);
     }
   );
+});
+
+test("student dashboard route returns the authenticated student's dashboard only", async () => {
+  await withPatchedMethods(
+    StudentDashboardModel,
+    {
+      getDashboard: async (user) => {
+        assert.equal(user.userId, studentA.userId);
+        assert.equal(user.role, "student");
+        return {
+          profile: { id: studentA.userId, firstName: "Ada" },
+          summary: {
+            enrolledClasses: 1,
+            availableAssignments: 1,
+            inProgressAssignments: 1,
+            completedAssignments: 1,
+            averageScore: 84,
+          },
+          nextAction: { id: "assignment-a", userStatus: "in_progress", userAttemptId: "attempt-a" },
+          upcomingAssignments: [{ id: "assignment-a", userStatus: "in_progress" }],
+          recentResults: [{ assignmentId: "assignment-b", attemptId: "attempt-b", percentage: 84 }],
+          performanceByCourse: [{ course: "Cloud", courseCode: "CLOUD", averageScore: 84, completedAssignments: 1 }],
+        };
+      },
+    },
+    async () => {
+      const response = await request(buildApp(), "/student/dashboard", { user: studentA });
+
+      assert.equal(response.status, 200);
+      assert.equal(response.body.data.dashboard.profile.id, studentA.userId);
+      assert.equal(response.body.data.dashboard.nextAction.userAttemptId, "attempt-a");
+    }
+  );
+});
+
+test("lecturers cannot read the student dashboard endpoint", async () => {
+  const response = await request(buildApp(), "/student/dashboard", { user: lecturerA });
+
+  assert.equal(response.status, 403);
+  assert.equal(response.body.success, false);
 });
 
 test("student class detail hides other roster members", async () => {
@@ -519,6 +566,49 @@ test("students cannot request assignment AI insights", async () => {
   assert.equal(response.body.success, false);
 });
 
+test("lecturers cannot start, submit, or log student attempt activity", async () => {
+  let touchedAttemptState = false;
+
+  await withPatchedMethods(
+    AssignmentModel,
+    {
+      startAttempt: async () => {
+        touchedAttemptState = true;
+        return { id: "attempt-a" };
+      },
+      submitAttempt: async () => {
+        touchedAttemptState = true;
+        return { id: "attempt-a" };
+      },
+      logProctoringEvent: async () => {
+        touchedAttemptState = true;
+      },
+    },
+    async () => {
+      const app = buildApp();
+      const startResponse = await request(app, "/assignments/assignment-a/start-attempt", {
+        method: "POST",
+        user: lecturerA,
+      });
+      const submitResponse = await request(app, "/assignments/assignment-a/submit-attempt", {
+        method: "POST",
+        user: lecturerA,
+        body: { attemptId: "attempt-a", answers: [] },
+      });
+      const proctoringResponse = await request(app, "/assignments/assignment-a/proctoring-event", {
+        method: "POST",
+        user: lecturerA,
+        body: { attemptId: "attempt-a", eventType: "tab_switch" },
+      });
+
+      assert.equal(startResponse.status, 403);
+      assert.equal(submitResponse.status, 403);
+      assert.equal(proctoringResponse.status, 403);
+      assert.equal(touchedAttemptState, false);
+    }
+  );
+});
+
 test("lecturer cannot mutate an assignment outside their ownership", async () => {
   let updated = false;
 
@@ -600,6 +690,165 @@ test("lecturer can fetch question bank answers through the lecturer-only route",
 
       assert.equal(response.status, 200);
       assert.equal(response.body.data.questions[0].correctAnswer, "A");
+    }
+  );
+});
+
+test("manual class code lookup is disabled", async () => {
+  const response = await request(buildApp(), "/classes/code/CS-2026");
+
+  assert.equal(response.status, 410);
+  assert.equal(response.body.success, false);
+});
+
+test("student join link enrolls by invitation token from the route path", async () => {
+  let capturedToken = null;
+
+  await withPatchedMethods(
+    ClassModel,
+    {
+      enrollStudentWithInvitation: async ({ token }) => {
+        capturedToken = token;
+        return {
+          success: true,
+          alreadyEnrolled: false,
+          class: { id: "class-a", name: "Secure Class" },
+        };
+      },
+    },
+    async () => {
+      const response = await request(buildApp(), "/classes/join/raw-token-123", {
+        method: "POST",
+        user: studentA,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(capturedToken, "raw-token-123");
+      assert.equal(response.body.data.class.id, "class-a");
+    }
+  );
+});
+
+test("lecturer rotate invitation returns only a share URL with the raw token", async () => {
+  await withPatchedMethods(
+    ClassModel,
+    {
+      rotateInvitationForUser: async (classId, user) => {
+        assert.equal(classId, "class-a");
+        assert.equal(user.userId, lecturerA.userId);
+        return {
+          id: classId,
+          invitationStatus: "active",
+          invitationExpiresAt: null,
+          invitationJoinCount: 0,
+          hasInvitationLink: true,
+          invitationToken: "fresh-token",
+        };
+      },
+    },
+    async () => {
+      const response = await request(buildApp(), "/classes/class-a/invitation/rotate", {
+        method: "POST",
+        user: lecturerA,
+      });
+
+      assert.equal(response.status, 200);
+      assert.match(response.body.data.invitation.url, /\/join\/fresh-token$/);
+      assert.equal(response.body.data.invitation.tokenHash, undefined);
+    }
+  );
+});
+
+test("paused expired and rotated class invitation tokens fail generically", async () => {
+  const freshHash = ClassModel.hashInvitationToken("fresh-token");
+  const expiredHash = ClassModel.hashInvitationToken("expired-token");
+
+  await withPatchedSupabase((state) => {
+    if (state.table === "classes" && state.maybeSingle) {
+      const tokenHash = state.eq.find((item) => item.column === "invitation_token_hash")?.value;
+      if (tokenHash === freshHash) {
+        return { data: { id: "class-a", invitation_status: "paused", invitation_expires_at: null }, error: null };
+      }
+      if (tokenHash === expiredHash) {
+        return { data: { id: "class-a", invitation_status: "active", invitation_expires_at: "2020-01-01T00:00:00.000Z" }, error: null };
+      }
+      return { data: null, error: null };
+    }
+    return { data: null, error: null };
+  }, async () => {
+    const paused = await ClassModel.enrollStudentWithInvitation({ token: "fresh-token", studentId: studentA.userId });
+    const expired = await ClassModel.enrollStudentWithInvitation({ token: "expired-token", studentId: studentA.userId });
+    const rotated = await ClassModel.enrollStudentWithInvitation({ token: "old-token", studentId: studentA.userId });
+
+    assert.equal(paused.success, false);
+    assert.equal(expired.success, false);
+    assert.equal(rotated.success, false);
+    assert.equal(paused.message, "Invalid or expired class invitation link.");
+    assert.equal(expired.message, "Invalid or expired class invitation link.");
+    assert.equal(rotated.message, "Invalid or expired class invitation link.");
+  });
+});
+
+test("student password unlock issues a server token and start attempt receives it", async () => {
+  await withPatchedMethods(
+    AssignmentModel,
+    {
+      unlockAssignment: async (assignmentId, studentId, user, password) => {
+        assert.equal(assignmentId, "assignment-a");
+        assert.equal(studentId, studentA.userId);
+        assert.equal(user.role, "student");
+        assert.equal(password, "correct-password");
+        return { passwordRequired: true, assignmentAccessToken: "assignment-access-token" };
+      },
+      startAttempt: async (assignmentId, studentId, user, assignmentAccessToken) => {
+        assert.equal(assignmentId, "assignment-a");
+        assert.equal(studentId, studentA.userId);
+        assert.equal(user.role, "student");
+        assert.equal(assignmentAccessToken, "assignment-access-token");
+        return { attemptId: "attempt-a", assignment: { questions: [] } };
+      },
+    },
+    async () => {
+      const app = buildApp();
+      const unlockResponse = await request(app, "/assignments/assignment-a/unlock", {
+        method: "POST",
+        user: studentA,
+        body: { password: "correct-password" },
+      });
+      const startResponse = await request(app, "/assignments/assignment-a/start-attempt", {
+        method: "POST",
+        user: studentA,
+        body: { assignmentAccessToken: unlockResponse.body.data.assignmentAccessToken },
+      });
+
+      assert.equal(unlockResponse.status, 200);
+      assert.equal(unlockResponse.body.data.assignmentAccessToken, "assignment-access-token");
+      assert.equal(startResponse.status, 200);
+      assert.equal(startResponse.body.data.attemptId, "attempt-a");
+    }
+  );
+});
+
+test("password protected assignments reject start attempts without server unlock token", async () => {
+  await withPatchedMethods(
+    AssignmentModel,
+    {
+      resolveStudentId: async () => studentA.userId,
+      canAccessAssignment: async () => true,
+      findById: async () => ({
+        id: "assignment-a",
+        passwordRequired: true,
+        canStart: true,
+        scheduledStart: null,
+        scheduledEnd: null,
+      }),
+      verifyAssignmentAccessToken: () => false,
+    },
+    async () => {
+      await assert.rejects(
+        () => AssignmentModel.startAttempt("assignment-a", studentA.userId, studentA),
+        /Assignment password is required/
+      );
     }
   );
 });

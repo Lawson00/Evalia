@@ -3,6 +3,34 @@ BEGIN;
 ALTER TABLE lecturer_feedback_notes
 ADD COLUMN IF NOT EXISTS created_by UUID;
 
+ALTER TABLE assessment_attempts
+ADD COLUMN IF NOT EXISTS question_snapshot JSONB DEFAULT '[]'::jsonb;
+
+ALTER TABLE classes
+ADD COLUMN IF NOT EXISTS invitation_token_hash TEXT;
+
+ALTER TABLE classes
+ADD COLUMN IF NOT EXISTS invitation_status VARCHAR(20) DEFAULT 'revoked';
+
+ALTER TABLE classes
+ADD COLUMN IF NOT EXISTS invitation_expires_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE classes
+ADD COLUMN IF NOT EXISTS invitation_join_count INT DEFAULT 0;
+
+ALTER TABLE classes
+ADD COLUMN IF NOT EXISTS invitation_rotated_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE classes
+DROP CONSTRAINT IF EXISTS classes_invitation_status_check;
+
+ALTER TABLE classes
+ADD CONSTRAINT classes_invitation_status_check
+CHECK (invitation_status IN ('active', 'paused', 'revoked'));
+
+ALTER TABLE assignments
+ADD COLUMN IF NOT EXISTS access_password_hash VARCHAR(255);
+
 UPDATE lecturer_feedback_notes n
 SET created_by = c.lecturer_id
 FROM classes c
@@ -254,8 +282,8 @@ CREATE OR REPLACE FUNCTION enforce_user_role_lineage()
 RETURNS TRIGGER AS $$
 BEGIN
     IF OLD.role IS DISTINCT FROM NEW.role THEN
-        IF OLD.role = 'lecturer'
-            AND NEW.role NOT IN ('lecturer', 'admin')
+        IF OLD.role IN ('lecturer', 'admin')
+            AND NEW.role <> OLD.role
             AND (
                 EXISTS (SELECT 1 FROM lecturer_profiles WHERE user_id = OLD.id)
                 OR EXISTS (SELECT 1 FROM classes WHERE lecturer_id = OLD.id)
@@ -264,7 +292,7 @@ BEGIN
                 OR EXISTS (SELECT 1 FROM questions WHERE created_by = OLD.id)
                 OR EXISTS (SELECT 1 FROM lecturer_feedback_notes WHERE created_by = OLD.id)
             ) THEN
-            RAISE EXCEPTION 'users.role cannot change from lecturer while lecturer descendants exist'
+            RAISE EXCEPTION 'users.role cannot change while lecturer/admin descendants exist'
                 USING ERRCODE = 'check_violation';
         END IF;
 
@@ -576,11 +604,14 @@ BEFORE INSERT OR UPDATE OF class_id, student_id, created_by ON lecturer_feedback
 FOR EACH ROW EXECUTE FUNCTION enforce_feedback_note_scope();
 
 CREATE INDEX IF NOT EXISTS idx_classes_lecturer ON classes(lecturer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_invitation_token_hash ON classes(invitation_token_hash) WHERE invitation_token_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_classes_invitation_status ON classes(invitation_status);
 CREATE INDEX IF NOT EXISTS idx_class_enrollments_student ON class_enrollments(student_id);
 CREATE INDEX IF NOT EXISTS idx_topics_lecturer ON topics(lecturer_id);
 CREATE INDEX IF NOT EXISTS idx_questions_created_by ON questions(created_by);
 CREATE INDEX IF NOT EXISTS idx_assignments_class ON assignments(class_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_created_by ON assignments(created_by);
+CREATE INDEX IF NOT EXISTS idx_assignments_access_password_hash ON assignments(access_password_hash) WHERE access_password_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_assignment_questions_order ON assignment_questions(assignment_id, question_order);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_attempts_one_active_per_student_assignment
     ON assessment_attempts(assignment_id, student_id)

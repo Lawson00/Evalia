@@ -1,9 +1,11 @@
+const crypto = require("node:crypto");
 const { supabaseAdmin } = require("../config/supabase");
 
 const getUserRole = (user) => String(user?.role || "").toLowerCase();
 const isAdmin = (user) => getUserRole(user) === "admin";
 const isLecturer = (user) => getUserRole(user) === "lecturer";
 const isStudent = (user) => getUserRole(user) === "student";
+const INVITATION_STATUSES = new Set(["active", "paused", "revoked"]);
 
 class ClassModel {
   /**
@@ -16,8 +18,12 @@ class ClassModel {
       lecturerId: row.lecturer_id,
       name: row.name,
       classCode: row.course_code || "CS 101",
-      joinCode: row.join_code,
-      department: row.department || "Computer Science",
+	      joinCode: row.join_code,
+	      invitationStatus: row.invitation_status || "revoked",
+	      invitationExpiresAt: row.invitation_expires_at || null,
+	      invitationJoinCount: Number(row.invitation_join_count) || 0,
+	      hasInvitationLink: Boolean(row.invitation_token_hash && row.invitation_status !== "revoked"),
+	      department: row.department || "Computer Science",
       assessmentWeighting: Number(row.assessment_weighting) || 30,
       passThreshold: Number(row.pass_threshold) || 60,
       gradeScale: row.grade_scale || { aPlus: 90, a: 80, b: 70, c: 60, d: 50 },
@@ -27,31 +33,85 @@ class ClassModel {
     };
   }
 
-  /**
-   * Helper to generate unique class invite code (e.g. CS-892X)
-   */
+	  /**
+	   * Helper to generate unique class invite code (e.g. CS-892X)
+	   */
   static generateJoinCode(prefix = "CS") {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let code = "";
-    for (let i = 0; i < 4; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
+	    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+	    let code = "";
+	    for (let i = 0; i < 4; i++) {
+	      code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    const cleanPrefix = (prefix || "CS").split(" ")[0].toUpperCase();
-    return `${cleanPrefix}-${code}`;
+	    const cleanPrefix = (prefix || "CS").split(" ")[0].toUpperCase();
+	    return `${cleanPrefix}-${code}`;
+	  }
+
+  static generateInvitationToken() {
+    return crypto.randomBytes(32).toString("base64url");
+  }
+
+  static hashInvitationToken(token) {
+    return crypto.createHash("sha256").update(String(token || ""), "utf8").digest("hex");
+  }
+
+  static async resolveLecturerId(lecturerId, user) {
+    let actualId = lecturerId || user?.userId;
+
+    if (actualId) {
+      const { data: userRow } = await supabaseAdmin
+        .from("users")
+        .select("id")
+        .eq("id", actualId)
+        .single();
+      if (userRow) return userRow.id;
+    }
+
+    if (user?.email) {
+      const { data: emailUser } = await supabaseAdmin
+        .from("users")
+        .select("id")
+        .eq("email", user.email)
+        .single();
+      if (emailUser) return emailUser.id;
+    }
+
+    if (user?.email) {
+      const UserModel = require("./UserModel");
+      const newUser = await UserModel.createUser({
+        email: user.email,
+        passwordHash: null,
+        firstName: user.firstName || user.email.split("@")[0],
+        lastName: user.lastName || "",
+        role: user.role || "lecturer",
+        isProfileComplete: true,
+      });
+      if (newUser) return newUser.id;
+    }
+
+    const { data: anyUser } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .in("role", ["lecturer", "admin"])
+      .limit(1)
+      .single();
+
+    if (anyUser) return anyUser.id;
+    return actualId || null;
   }
 
   /**
    * Get all class cohorts for a lecturer (from Supabase DB)
    */
-  static async getAllByLecturer(lecturerId) {
+  static async getAllByLecturer(lecturerId, user = null) {
     try {
+      const resolvedLecId = await this.resolveLecturerId(lecturerId, user);
       let query = supabaseAdmin
         .from("classes")
         .select("*, class_enrollments(id)")
         .order("created_at", { ascending: false });
 
-      if (lecturerId) {
-        query = query.eq("lecturer_id", lecturerId);
+      if (resolvedLecId) {
+        query = query.or(`lecturer_id.eq.${resolvedLecId},lecturer_id.is.null`);
       }
 
       const { data, error } = await query;
@@ -66,15 +126,34 @@ class ClassModel {
   }
 
   static async getAllForUser(user) {
-    if (isAdmin(user)) return this.getAllByLecturer(null);
-    if (isLecturer(user)) return this.getAllByLecturer(user.userId);
+    if (isAdmin(user)) return this.getAllByLecturer(null, user);
+    if (isLecturer(user)) {
+      const resolvedLecId = await this.resolveLecturerId(user?.userId, user);
+      return this.getAllByLecturer(resolvedLecId, user);
+    }
     if (!isStudent(user) || !user?.userId) return [];
 
     try {
+      let actualStudentId = user.userId;
+      const { data: sUser } = await supabaseAdmin
+        .from("users")
+        .select("id")
+        .eq("id", actualStudentId)
+        .single();
+
+      if (!sUser && user.email) {
+        const { data: eUser } = await supabaseAdmin
+          .from("users")
+          .select("id")
+          .eq("email", user.email)
+          .single();
+        if (eUser) actualStudentId = eUser.id;
+      }
+
       const { data, error } = await supabaseAdmin
         .from("class_enrollments")
         .select("classes(*, class_enrollments(id))")
-        .eq("student_id", user.userId)
+        .eq("student_id", actualStudentId)
         .order("joined_at", { ascending: false });
 
       if (error || !data) return [];
@@ -107,22 +186,48 @@ class ClassModel {
     }
   }
 
-  static async isStudentEnrolled(classId, studentId) {
-    if (!classId || !studentId) return false;
+  static async resolveStudentId(studentId, user) {
+    let actualId = studentId || user?.userId;
+
+    if (actualId) {
+      const { data: sUser } = await supabaseAdmin
+        .from("users")
+        .select("id")
+        .eq("id", actualId)
+        .maybeSingle();
+      if (sUser) return sUser.id;
+    }
+
+    if (user?.email) {
+      const { data: eUser } = await supabaseAdmin
+        .from("users")
+        .select("id")
+        .eq("email", user.email)
+        .maybeSingle();
+      if (eUser) return eUser.id;
+    }
+
+    return actualId || null;
+  }
+
+  static async isStudentEnrolled(classId, studentId, user = null) {
+    if (!classId) return false;
+    const actualStudentId = await this.resolveStudentId(studentId, user);
+    if (!actualStudentId) return false;
 
     const { data, error } = await supabaseAdmin
       .from("class_enrollments")
       .select("id")
       .eq("class_id", classId)
-      .eq("student_id", studentId)
-      .single();
+      .eq("student_id", actualStudentId)
+      .maybeSingle();
 
     return !error && Boolean(data);
   }
 
   static async canAccessClass(classId, user) {
     if (isAdmin(user) || isLecturer(user)) return this.canManageClass(classId, user);
-    if (isStudent(user)) return this.isStudentEnrolled(classId, user.userId);
+    if (isStudent(user)) return this.isStudentEnrolled(classId, user?.userId, user);
     return false;
   }
 
@@ -131,12 +236,337 @@ class ClassModel {
     if (!canAccess) return null;
 
     const classData = await this.findById(classId);
-    if (!classData || !isStudent(user)) return classData;
+    if (!classData) return null;
+
+    if (!isStudent(user)) return classData;
+
+    const currentStudentId = await this.resolveStudentId(user?.userId, user);
+
+    const students = classData.students || [];
+    const studentRoster = students.filter((student) => student.studentId === currentStudentId);
+    const sortedByPoints = [...students].sort((a, b) => b.earnedPoints - a.earnedPoints);
+    const studentRankIdx = sortedByPoints.findIndex((s) => s.studentId === currentStudentId);
+    const studentRank = studentRankIdx >= 0 ? studentRankIdx + 1 : students.length || 1;
+
+    const studentInfo = students.find((s) => s.studentId === currentStudentId) || {
+      studentId: currentStudentId,
+      earnedPoints: 0,
+      totalClassPoints: 100,
+      completedAssignments: 0,
+    };
+
+    const now = new Date();
+
+    const studentAssignments = (classData.assignments || []).map((asgn) => {
+      const attempts = asgn.assessmentAttempts || asgn.assessment_attempts || [];
+      const userAttempt = attempts.find((a) => a.student_id === currentStudentId || a.studentId === currentStudentId);
+
+      const startDate = asgn.scheduledStart ? new Date(asgn.scheduledStart) : null;
+      const endDate = asgn.scheduledEnd ? new Date(asgn.scheduledEnd) : null;
+
+      const isLocked = Boolean(startDate && startDate > now);
+      const isExpired = Boolean(endDate && endDate < now);
+      const isCompleted = Boolean(userAttempt && (userAttempt.status === "completed" || userAttempt.status === "submitted"));
+      const canStart = !isLocked && !isExpired && !isCompleted && asgn.status !== "draft";
+
+      let scorePct = null;
+      if (userAttempt) {
+        scorePct = Number(userAttempt.percentage) || (userAttempt.total_points > 0 ? Math.round((userAttempt.earned_score / userAttempt.total_points) * 100) : 0);
+      }
+
+      return {
+        ...asgn,
+        isLocked,
+        isExpired,
+        isCompleted,
+        canStart,
+        userAttempt: userAttempt ? {
+          id: userAttempt.id,
+          status: userAttempt.status,
+          earnedScore: userAttempt.earned_score || userAttempt.earnedScore || 0,
+          totalPoints: userAttempt.total_points || userAttempt.totalPoints || asgn.totalPoints || 100,
+          percentage: scorePct,
+          submittedAt: userAttempt.completed_at || userAttempt.submitted_at || userAttempt.submittedAt,
+        } : null,
+      };
+    });
+
+    const visibleStudentAssignments = studentAssignments.filter((a) => a.status !== "draft");
+    const completedCount = visibleStudentAssignments.filter((a) => a.isCompleted).length;
+    const totalCount = visibleStudentAssignments.length;
+
+    const announcements = await this.getAnnouncements(classId);
+    const topicPerformance = await this.getTopicPerformance(classId, currentStudentId);
 
     return {
       ...classData,
-      students: (classData.students || []).filter((student) => student.studentId === user.userId),
+      students: studentRoster.length > 0 ? studentRoster : [studentInfo],
+      announcements,
+      topicPerformance,
+      studentMetrics: {
+        studentId: currentStudentId,
+        rank: studentRank,
+        totalStudentsCount: students.length,
+        earnedPoints: studentInfo.earnedPoints,
+        totalClassPoints: studentInfo.totalClassPoints,
+        accuracyPercent: studentInfo.totalClassPoints > 0 ? Math.round((studentInfo.earnedPoints / studentInfo.totalClassPoints) * 100) : 0,
+        completedCount,
+        totalCount,
+        pendingCount: Math.max(0, totalCount - completedCount),
+      },
+      assignments: visibleStudentAssignments,
     };
+  }
+
+  static async getTopicPerformance(classId, studentId) {
+    if (!classId) return [];
+
+    try {
+      // 1. Fetch Topics linked to class
+      const { data: topicsData } = await supabaseAdmin
+        .from("topics")
+        .select("id, name, description")
+        .eq("class_id", classId);
+
+      const topicsList = topicsData || [];
+      if (topicsList.length === 0) return [];
+
+      // 2. Fetch Assignments linked to class
+      const { data: assignments } = await supabaseAdmin
+        .from("assignments")
+        .select("id")
+        .eq("class_id", classId);
+
+      const assignmentIds = (assignments || []).map((a) => a.id);
+      if (assignmentIds.length === 0) {
+        return topicsList.map((t) => ({
+          id: t.id,
+          topic: t.name,
+          mastery: 0,
+          totalQuestions: 0,
+          totalAnswered: 0,
+        }));
+      }
+
+      // 3. Fetch Assessment Attempts
+      let attemptQuery = supabaseAdmin
+        .from("assessment_attempts")
+        .select("id, answers, status")
+        .in("assignment_id", assignmentIds);
+
+      if (studentId) {
+        attemptQuery = attemptQuery.eq("student_id", studentId);
+      }
+
+      const { data: attempts } = await attemptQuery;
+      const completedAttempts = (attempts || []).filter((a) => a.status === "completed" || a.status === "submitted");
+
+      const topicResults = [];
+
+      for (const t of topicsList) {
+        const { data: questions } = await supabaseAdmin
+          .from("questions")
+          .select("id, correct_answer")
+          .eq("topic_id", t.id);
+
+        const qList = questions || [];
+        const qMap = {};
+        qList.forEach((q) => {
+          qMap[q.id] = String(q.correct_answer || "").trim().toLowerCase();
+        });
+
+        let totalAnswered = 0;
+        let totalCorrect = 0;
+
+        completedAttempts.forEach((att) => {
+          const userAnswers = att.answers || {};
+          Object.keys(userAnswers).forEach((qId) => {
+            if (qMap[qId]) {
+              totalAnswered++;
+              const studentAns = String(userAnswers[qId] || "").trim().toLowerCase();
+              if (studentAns === qMap[qId]) {
+                totalCorrect++;
+              }
+            }
+          });
+        });
+
+        const mastery = totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0;
+
+        topicResults.push({
+          id: t.id,
+          topic: t.name,
+          mastery,
+          totalQuestions: qList.length,
+          totalAnswered,
+          totalCorrect,
+        });
+      }
+
+      return topicResults;
+    } catch (err) {
+      console.error("getTopicPerformance Error:", err.message);
+      return [];
+    }
+  }
+
+  static async getAnnouncements(classId) {
+    if (!classId) return [];
+    try {
+      // 1. Try class_announcements table
+      const { data, error } = await supabaseAdmin
+        .from("class_announcements")
+        .select("*, users(first_name, last_name, email)")
+        .eq("class_id", classId)
+        .order("created_at", { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        return data.map((row) => {
+          const u = row.users || {};
+          const lecturerName = u.first_name || u.last_name ? `${u.first_name || ""} ${u.last_name || ""}`.trim() : u.email || "Lecturer";
+          return {
+            id: row.id,
+            classId: row.class_id,
+            title: row.title,
+            content: row.content,
+            lecturerName,
+            createdAt: new Date(row.created_at || Date.now()).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          };
+        });
+      }
+
+      // 2. Fallback to Supabase ai_analytics_cache table
+      const { data: cacheData } = await supabaseAdmin
+        .from("ai_analytics_cache")
+        .select("*")
+        .eq("entity_type", "class_announcement")
+        .eq("entity_id", classId)
+        .order("created_at", { ascending: false });
+
+      return (cacheData || []).map((row) => row.insights_data);
+    } catch (err) {
+      console.error("getAnnouncements Error:", err.message);
+      return [];
+    }
+  }
+
+  static async createAnnouncement(classId, user, { title, content }) {
+    if (!classId || !title || !content) return null;
+
+    try {
+      let lecturerId = user?.userId;
+      if (lecturerId) {
+        const { data: sUser } = await supabaseAdmin
+          .from("users")
+          .select("id")
+          .eq("id", lecturerId)
+          .maybeSingle();
+        if (!sUser && user.email) {
+          const { data: eUser } = await supabaseAdmin
+            .from("users")
+            .select("id")
+            .eq("email", user.email)
+            .maybeSingle();
+          if (eUser) lecturerId = eUser.id;
+        }
+      }
+
+      const lecturerName = user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Lecturer" : "Lecturer";
+      const annObj = {
+        id: "ann-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        classId,
+        title,
+        content,
+        createdBy: lecturerId,
+        lecturerName,
+        createdAt: new Date().toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      };
+
+      // Try 1: class_announcements table
+      try {
+        const { data, error } = await supabaseAdmin
+          .from("class_announcements")
+          .insert({
+            class_id: classId,
+            created_by: lecturerId,
+            title,
+            content,
+          })
+          .select("*, users(first_name, last_name, email)")
+          .maybeSingle();
+
+        if (!error && data) {
+          const u = data.users || {};
+          const name = u.first_name || u.last_name ? `${u.first_name || ""} ${u.last_name || ""}`.trim() : user?.email || "Lecturer";
+          return {
+            id: data.id,
+            classId: data.class_id,
+            title: data.title,
+            content: data.content,
+            lecturerName: name,
+            createdAt: new Date(data.created_at || Date.now()).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          };
+        }
+      } catch (tErr) {
+        // Table class_announcements not present
+      }
+
+      // Try 2: Save directly to Supabase DB table ai_analytics_cache
+      const { error: cacheErr } = await supabaseAdmin.from("ai_analytics_cache").insert({
+        entity_type: "class_announcement",
+        entity_id: classId,
+        insights_data: annObj,
+      });
+
+      if (cacheErr) {
+        console.error("ai_analytics_cache insert error:", cacheErr.message);
+      }
+
+      return annObj;
+    } catch (err) {
+      console.error("createAnnouncement Error:", err.message);
+      return null;
+    }
+  }
+
+  static async deleteAnnouncement(classId, announcementId, user) {
+    if (!classId || !announcementId) return false;
+    try {
+      await supabaseAdmin
+        .from("class_announcements")
+        .delete()
+        .eq("id", announcementId)
+        .eq("class_id", classId);
+
+      await supabaseAdmin
+        .from("ai_analytics_cache")
+        .delete()
+        .eq("entity_type", "class_announcement")
+        .eq("entity_id", classId);
+
+      return true;
+    } catch (err) {
+      console.error("deleteAnnouncement Error:", err.message);
+      return false;
+    }
   }
 
   /**
@@ -158,8 +588,15 @@ class ClassModel {
       // 2. Fetch Assignments linked to this Class
       const { data: classAssignments } = await supabaseAdmin
         .from("assignments")
-        .select("id, total_points")
-        .eq("class_id", classId);
+        .select("*, assignment_questions(id), assessment_attempts(*)")
+        .eq("class_id", classId)
+        .order("scheduled_start", { ascending: true });
+
+      const AssignmentModel = require("./AssignmentModel");
+      const mappedAssignments = (classAssignments || []).map((a) => ({
+        ...AssignmentModel.mapAssignmentRow(a),
+        assessment_attempts: a.assessment_attempts || [],
+      }));
 
       const assignmentIds = (classAssignments || []).map((a) => a.id);
       const totalClassPossiblePoints = (classAssignments || []).reduce(
@@ -182,7 +619,6 @@ class ClassModel {
         let proctoringFlagsCount = 0;
 
         if (assignmentIds.length > 0) {
-          // Query real attempts for this student across class assignments
           const { data: attempts } = await supabaseAdmin
             .from("assessment_attempts")
             .select("id, earned_score, total_points, status")
@@ -222,6 +658,8 @@ class ClassModel {
 
       const formatted = this.mapClassRow(classRow, enrolledStudents.length);
       formatted.students = enrolledStudents;
+      formatted.assignments = mappedAssignments;
+      formatted.announcements = await this.getAnnouncements(classId);
       return formatted;
     } catch (err) {
       console.error("Supabase findById Error:", err.message);
@@ -230,36 +668,60 @@ class ClassModel {
   }
 
   /**
-   * Find Class by Join Code (from Supabase DB)
+   * Find Class by Join Code (from Supabase DB with flexible alphanumeric & course matching)
    */
   static async findByJoinCode(joinCode) {
     if (!joinCode) return null;
-    const cleanCode = joinCode.trim().toUpperCase();
+    const raw = joinCode.trim();
+    const cleanCode = raw.toUpperCase();
+    const stripped = cleanCode.replace(/[^A-Z0-9]/g, "");
 
     try {
-      // 1. Query by join_code (case-insensitive)
-      const { data: byCode, error: codeErr } = await supabaseAdmin
+      // 1. Query by exact or ilike join_code
+      const { data: byCode } = await supabaseAdmin
         .from("classes")
         .select("*, class_enrollments(id)")
         .ilike("join_code", cleanCode)
-        .single();
+        .limit(1)
+        .maybeSingle();
 
-      if (!codeErr && byCode) {
-        return this.mapClassRow(byCode, byCode.class_enrollments?.length || 0);
+      if (byCode) return this.mapClassRow(byCode, byCode.class_enrollments?.length || 0);
+
+      // 2. Query by course_code (e.g. CS 101)
+      const { data: byCourse } = await supabaseAdmin
+        .from("classes")
+        .select("*, class_enrollments(id)")
+        .ilike("course_code", cleanCode)
+        .limit(1)
+        .maybeSingle();
+
+      if (byCourse) return this.mapClassRow(byCourse, byCourse.class_enrollments?.length || 0);
+
+      // 3. Query all classes and check stripped alphanumeric match (e.g. CS101 matches CS-101)
+      const { data: allClasses } = await supabaseAdmin
+        .from("classes")
+        .select("*, class_enrollments(id)");
+
+      if (allClasses && allClasses.length > 0) {
+        const match = allClasses.find((c) => {
+          const jStripped = (c.join_code || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+          const cStripped = (c.course_code || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+          return (jStripped && jStripped === stripped) || (cStripped && cStripped === stripped);
+        });
+
+        if (match) return this.mapClassRow(match, match.class_enrollments?.length || 0);
       }
 
-      // 2. Query by ID if joinCode is a valid UUID
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(joinCode);
+      // 4. Query by ID if joinCode is a valid UUID
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
       if (isUuid) {
-        const { data: byId, error: idErr } = await supabaseAdmin
+        const { data: byId } = await supabaseAdmin
           .from("classes")
           .select("*, class_enrollments(id)")
-          .eq("id", joinCode)
-          .single();
+          .eq("id", raw)
+          .maybeSingle();
 
-        if (!idErr && byId) {
-          return this.mapClassRow(byId, byId.class_enrollments?.length || 0);
-        }
+        if (byId) return this.mapClassRow(byId, byId.class_enrollments?.length || 0);
       }
     } catch (err) {
       console.error("Supabase findByJoinCode Error:", err.message);
@@ -270,43 +732,88 @@ class ClassModel {
   /**
    * Create New Class Cohort (in Supabase DB)
    */
-  static async createClass({ lecturerId, name, classCode, department }) {
-    const joinCode = this.generateJoinCode(classCode || "CS");
+  static async createClass({ lecturerId, name, classCode, department, user }) {
+	    const joinCode = this.generateJoinCode(classCode || "CS");
+	    const invitationToken = this.generateInvitationToken();
+	    const invitationTokenHash = this.hashInvitationToken(invitationToken);
+    const actualLecturerId = await this.resolveLecturerId(lecturerId, user);
 
-    let actualLecturerId = lecturerId;
-    if (!lecturerId || lecturerId === "usr-lawson-test") {
-      const { data: lecUser } = await supabaseAdmin
-        .from("users")
-        .select("id")
-        .eq("email", "lawsonsamson32@gmail.com")
-        .single();
-      if (lecUser) actualLecturerId = lecUser.id;
+    if (!actualLecturerId) {
+      throw new Error("No valid lecturer account found. Please sign up or log in as a Lecturer first.");
     }
 
-    const { data, error } = await supabaseAdmin
+    let data, error;
+    const fullPayload = {
+      lecturer_id: actualLecturerId,
+      name,
+      course_code: classCode || "CS 101",
+      join_code: joinCode,
+      invitation_token_hash: invitationTokenHash,
+      invitation_status: "active",
+      invitation_join_count: 0,
+      department: department || "Computer Science",
+      assessment_weighting: 30,
+      pass_threshold: 60,
+      grade_scale: { aPlus: 90, a: 80, b: 70, c: 60, d: 50 },
+      is_enrollment_open: true,
+    };
+
+    const res1 = await supabaseAdmin
       .from("classes")
-      .insert([
-        {
+      .insert([fullPayload])
+      .select();
+
+    if (!res1.error && res1.data && res1.data.length > 0) {
+      data = res1.data[0];
+    } else {
+      // Fallback 1: Standard DB schema columns (omit invitation_* if schema lacks them)
+      const standardPayload = {
+        lecturer_id: actualLecturerId,
+        name,
+        course_code: classCode || "CS 101",
+        join_code: joinCode,
+        department: department || "Computer Science",
+        assessment_weighting: 30,
+        pass_threshold: 60,
+        is_enrollment_open: true,
+      };
+
+      const res2 = await supabaseAdmin
+        .from("classes")
+        .insert([standardPayload])
+        .select();
+
+      if (!res2.error && res2.data && res2.data.length > 0) {
+        data = res2.data[0];
+      } else {
+        // Fallback 2: Essential core columns
+        const minimalPayload = {
           lecturer_id: actualLecturerId,
           name,
           course_code: classCode || "CS 101",
           join_code: joinCode,
           department: department || "Computer Science",
-          assessment_weighting: 30,
-          pass_threshold: 60,
-          grade_scale: { aPlus: 90, a: 80, b: 70, c: 60, d: 50 },
-          is_enrollment_open: true,
-        },
-      ])
-      .select()
-      .single();
+        };
+
+        const res3 = await supabaseAdmin
+          .from("classes")
+          .insert([minimalPayload])
+          .select();
+
+        if (!res3.error && res3.data && res3.data.length > 0) {
+          data = res3.data[0];
+        } else {
+          error = res3.error || res2.error || res1.error;
+        }
+      }
+    }
 
     if (error) {
       console.error("Supabase createClass Error:", error.message);
       throw new Error(`Failed to create class in database: ${error.message}`);
     }
 
-    return this.mapClassRow(data, 0);
+    return { ...this.mapClassRow(data, 0), invitationToken };
   }
 
   /**
@@ -337,11 +844,134 @@ class ClassModel {
     return this.mapClassRow(data, 0);
   }
 
-  static async updateSettingsForUser(classId, user, updates) {
-    const canManage = await this.canManageClass(classId, user);
-    if (!canManage) return null;
-    return this.updateSettings(classId, updates);
-  }
+	  static async updateSettingsForUser(classId, user, updates) {
+	    const canManage = await this.canManageClass(classId, user);
+	    if (!canManage) return null;
+	    return this.updateSettings(classId, updates);
+	  }
+
+	  static async getInvitationForUser(classId, user) {
+	    const canManage = await this.canManageClass(classId, user);
+	    if (!canManage) return null;
+
+	    try {
+	      const { data, error } = await supabaseAdmin
+	        .from("classes")
+	        .select("id, invitation_token_hash, invitation_status, invitation_expires_at, invitation_join_count, is_enrollment_open")
+	        .eq("id", classId)
+	        .maybeSingle();
+
+	      if (!error && data) {
+	        return {
+	          classId: data.id,
+	          status: data.invitation_status || "active",
+	          expiresAt: data.invitation_expires_at || null,
+	          joinedCount: Number(data.invitation_join_count) || 0,
+	          hasLink: Boolean(data.invitation_status !== "revoked"),
+	          isEnrollmentOpen: data.is_enrollment_open !== false,
+	        };
+	      }
+	    } catch (e) {
+	      console.warn("getInvitationForUser fallback to base class query:", e.message);
+	    }
+
+	    const baseClass = await this.findById(classId);
+	    if (!baseClass) return null;
+	    return {
+	      classId: baseClass.id,
+	      status: "active",
+	      expiresAt: null,
+	      joinedCount: baseClass.subscribedStudentsCount || 0,
+	      hasLink: true,
+	      isEnrollmentOpen: true,
+	    };
+	  }
+
+	  static async rotateInvitationForUser(classId, user, { expiresAt } = {}) {
+	    const canManage = await this.canManageClass(classId, user);
+	    if (!canManage) return null;
+
+	    const token = this.generateInvitationToken();
+	    const payload = {
+	      invitation_token_hash: this.hashInvitationToken(token),
+	      invitation_status: "active",
+	      invitation_expires_at: expiresAt || null,
+	      invitation_join_count: 0,
+	      invitation_rotated_at: new Date().toISOString(),
+	    };
+
+	    try {
+	      const { data, error } = await supabaseAdmin
+	        .from("classes")
+	        .update(payload)
+	        .eq("id", classId)
+	        .select()
+	        .maybeSingle();
+
+	      if (!error && data) {
+	        return { ...this.mapClassRow(data), invitationToken: token };
+	      }
+	    } catch (e) {
+	      console.warn("rotateInvitationForUser schema fallback:", e.message);
+	    }
+
+	    const baseClass = await this.findById(classId);
+	    if (!baseClass) return null;
+	    return { ...baseClass, invitationToken: baseClass.joinCode || baseClass.classCode || baseClass.id };
+	  }
+
+	  static async updateInvitationForUser(classId, user, { status, expiresAt }) {
+	    const canManage = await this.canManageClass(classId, user);
+	    if (!canManage) return null;
+	    const normalizedStatus = String(status || "").toLowerCase();
+	    if (!INVITATION_STATUSES.has(normalizedStatus) || normalizedStatus === "revoked") {
+	      throw new Error("Invitation status must be active or paused.");
+	    }
+
+	    const payload = { invitation_status: normalizedStatus };
+	    if (expiresAt !== undefined) payload.invitation_expires_at = expiresAt || null;
+
+	    try {
+	      const { data, error } = await supabaseAdmin
+	        .from("classes")
+	        .update(payload)
+	        .eq("id", classId)
+	        .select()
+	        .maybeSingle();
+
+	      if (!error && data) {
+	        return { ...this.mapClassRow(data) };
+	      }
+	    } catch (e) {
+	      console.warn("updateInvitationForUser schema fallback:", e.message);
+	    }
+
+	    const baseClass = await this.findById(classId);
+	    return baseClass ? { ...baseClass, invitationStatus: normalizedStatus } : null;
+	  };
+
+	  static async revokeInvitationForUser(classId, user) {
+	    const canManage = await this.canManageClass(classId, user);
+	    if (!canManage) return null;
+
+	    const { data, error } = await supabaseAdmin
+	      .from("classes")
+	      .update({
+	        invitation_token_hash: null,
+	        invitation_status: "revoked",
+	        invitation_expires_at: null,
+	        invitation_rotated_at: new Date().toISOString(),
+	      })
+	      .eq("id", classId)
+	      .select()
+	      .single();
+
+	    if (error) {
+	      throw new Error(`Failed to revoke class invitation link: ${error.message}`);
+	    }
+
+	    return this.mapClassRow(data);
+	  }
 
   /**
    * Delete Class Cohort (from Supabase DB)
@@ -364,22 +994,18 @@ class ClassModel {
   /**
    * Enroll Student into Class Cohort (in Supabase DB)
    */
-  static async enrollStudent({ classId, joinCode, studentId, studentName, studentEmail, indexNumber }) {
+	  static async enrollStudent({ classId, joinCode, studentId, studentName, studentEmail, indexNumber }) {
     let targetClass = null;
 
     if (joinCode) targetClass = await this.findByJoinCode(joinCode);
     if (!targetClass && classId) targetClass = await this.findById(classId);
 
-    if (!targetClass) return { success: false, message: "Class cohort not found or enrollment is closed." };
+    if (!targetClass) return { success: false, message: "Class cohort not found. Please verify your Join Code with your lecturer." };
     if (!targetClass.isEnrollmentOpen) return { success: false, message: "Enrollment for this class is currently closed." };
 
     let actualStudentId = studentId;
-    if (!actualStudentId || actualStudentId.startsWith("usr-")) {
-      const { data: sUser } = await supabaseAdmin.from("users").select("id").eq("email", studentEmail).single();
-      if (sUser) actualStudentId = sUser.id;
-    }
 
-    if (actualStudentId && targetClass.id) {
+    if (actualStudentId) {
       const alreadyEnrolled = await this.isStudentEnrolled(targetClass.id, actualStudentId);
       if (alreadyEnrolled) {
         return {
@@ -388,27 +1014,147 @@ class ClassModel {
           class: targetClass,
         };
       }
+    }
 
-      const { error } = await supabaseAdmin
-        .from("class_enrollments")
-        .upsert([{ class_id: targetClass.id, student_id: actualStudentId }], { onConflict: "class_id,student_id" });
+    // 1. Check if actualStudentId exists in DB users table
+    if (actualStudentId) {
+      const { data: sUser } = await supabaseAdmin
+        .from("users")
+        .select("id, role")
+        .eq("id", actualStudentId)
+        .maybeSingle();
 
-      if (error) {
-        console.error("Supabase enrollStudent Error:", error.message);
-        return {
-          success: false,
-          message: `Failed to enroll into class: ${error.message}`,
-          class: targetClass,
-        };
+      if (sUser?.role && sUser.role !== "student") {
+        return { success: false, message: "Only student accounts can enroll into a class cohort." };
+      }
+
+      if (!sUser) {
+        actualStudentId = null;
       }
     }
 
-    return {
-      success: true,
-      alreadyEnrolled: false,
-      class: targetClass,
-    };
-  }
+    // 2. If not found by ID, search by student email
+    if (!actualStudentId && studentEmail) {
+      const { data: emailUser } = await supabaseAdmin
+        .from("users")
+        .select("id, role")
+        .eq("email", studentEmail)
+        .maybeSingle();
+
+      if (emailUser) {
+        if (emailUser.role !== "student") {
+          return { success: false, message: "Only student accounts can enroll into a class cohort." };
+        }
+        actualStudentId = emailUser.id;
+      }
+    }
+
+    // 3. If student is still missing in DB (e.g. wiped database with active session token), create student entry now!
+    if (!actualStudentId && studentEmail) {
+      const UserModel = require("./UserModel");
+      const nameParts = (studentName || studentEmail.split("@")[0]).split(" ");
+      const newStudent = await UserModel.createUser({
+        email: studentEmail,
+        passwordHash: null,
+        firstName: nameParts[0] || "Student",
+        lastName: nameParts.slice(1).join(" ") || "User",
+        role: "student",
+        isProfileComplete: true,
+      });
+
+      if (newStudent) {
+        actualStudentId = newStudent.id;
+        await UserModel.createStudentProfile({
+          userId: newStudent.id,
+          indexNumber: indexNumber || `IND-2026-${Math.floor(100 + Math.random() * 900)}`,
+          courseCode: targetClass.classCode || "CS 101",
+        });
+      }
+    }
+
+    if (!actualStudentId) {
+      return { success: false, message: "Student profile not found. Please log in or sign up first." };
+    }
+
+    const alreadyEnrolled = await this.isStudentEnrolled(targetClass.id, actualStudentId);
+    if (alreadyEnrolled) {
+      return {
+        success: true,
+        alreadyEnrolled: true,
+        class: targetClass,
+      };
+    }
+
+    const { error } = await supabaseAdmin
+      .from("class_enrollments")
+      .upsert([{ class_id: targetClass.id, student_id: actualStudentId }], { onConflict: "class_id,student_id" });
+
+    if (error) {
+      console.error("Supabase enrollStudent Error:", error.message);
+      return {
+        success: false,
+        message: `Failed to enroll into class: ${error.message}`,
+        class: targetClass,
+      };
+    }
+
+	    return {
+	      success: true,
+	      alreadyEnrolled: false,
+	      class: targetClass,
+	    };
+	  }
+
+	  static async enrollStudentWithInvitation({ token, studentId, studentName, studentEmail, indexNumber }) {
+	    if (!token || !studentId) {
+	      return { success: false, message: "Invalid or expired class invitation link." };
+	    }
+
+	    const rawToken = String(token).trim();
+	    const tokenHash = this.hashInvitationToken(rawToken);
+	    let { data: row, error } = await supabaseAdmin
+	      .from("classes")
+	      .select("*, class_enrollments(id)")
+	      .eq("invitation_token_hash", tokenHash)
+	      .maybeSingle();
+
+	    if (error || !row) {
+	      const targetClass = await this.findByJoinCode(rawToken);
+	      if (targetClass) {
+	        return this.enrollStudent({
+	          classId: targetClass.id,
+	          studentId,
+	          studentName,
+	          studentEmail,
+	          indexNumber,
+	        });
+	      }
+	      return { success: false, message: "Invalid or expired class invitation link." };
+	    }
+
+	    const status = row.invitation_status || "revoked";
+	    const expiresAt = row.invitation_expires_at ? new Date(row.invitation_expires_at) : null;
+	    if (status !== "active" || (expiresAt && expiresAt <= new Date())) {
+	      return { success: false, message: "Invalid or expired class invitation link." };
+	    }
+
+	    const result = await this.enrollStudent({
+	      classId: row.id,
+	      studentId,
+	      studentName,
+	      studentEmail,
+	      indexNumber,
+	    });
+
+	    if (result.success && !result.alreadyEnrolled) {
+	      await supabaseAdmin
+	        .from("classes")
+	        .update({ invitation_join_count: (Number(row.invitation_join_count) || 0) + 1 })
+	        .eq("id", row.id);
+	    }
+
+	    return result;
+	  }
 
   /**
    * Remove Student from Class Cohort (from Supabase DB)

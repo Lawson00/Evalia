@@ -7,6 +7,7 @@ const {
   login,
   completeOAuthProfile,
   getCurrentUser,
+  updateUserProfile,
 } = require("../controllers/authController");
 const { authenticateToken } = require("../middlewares/authMiddleware");
 
@@ -60,5 +61,12 @@ router.post("/google/complete-profile", completeOAuthProfile);
  * @access  Private (JWT Token Required)
  */
 router.get("/me", authenticateToken, getCurrentUser);
+
+/**
+ * @route   PUT /api/v1/auth/profile
+ * @desc    Update profile details for authenticated user
+ * @access  Private (JWT Token Required)
+ */
+router.put("/profile", authenticateToken, updateUserProfile);
 
 module.exports = router;

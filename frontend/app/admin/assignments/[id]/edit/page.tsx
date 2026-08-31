@@ -57,6 +57,9 @@ export interface TopicItem {
   description?: string;
 }
 
+type AccessMode = "class" | "password" | "public";
+type PasswordAction = "keep" | "replace" | "remove";
+
 function EditAssignmentContent() {
   const { id } = useParams();
   const router = useRouter();
@@ -95,10 +98,12 @@ function EditAssignmentContent() {
     return d.toISOString().slice(0, 16);
   });
 
-  const [timeLimit, setTimeLimit] = useState<number>(60);
-  const [passMark, setPassMark] = useState<number>(70);
-  const [accessMode, setAccessMode] = useState<"class" | "password" | "public">("class");
-  const [accessPassword, setAccessPassword] = useState("EVALIA-2026-KEY");
+  const [timeLimit, setTimeLimit] = useState<number | string>(60);
+  const [passMark, setPassMark] = useState<number | string>(70);
+  const [accessMode, setAccessMode] = useState<AccessMode>("class");
+  const [accessPassword, setAccessPassword] = useState("");
+  const [passwordAction, setPasswordAction] = useState<PasswordAction>("keep");
+  const [passwordRequired, setPasswordRequired] = useState(false);
   const [passwordCopied, setPasswordCopied] = useState(false);
 
   // Proctoring & Security State
@@ -109,6 +114,7 @@ function EditAssignmentContent() {
     shuffleQuestions: true,
     shuffleOptions: true,
     disableCopyPaste: true,
+    proctoringViolationThreshold: 5,
   });
 
   const [saving, setSaving] = useState(false);
@@ -175,10 +181,12 @@ function EditAssignmentContent() {
           setDescription(dbAsgn.description || dbAsgn.instructions || "");
           setClassId(dbAsgn.classId || (fetchedClasses[0]?.id || ""));
           setStatus(dbAsgn.status || "active");
-          setTimeLimit(Number(dbAsgn.duration || dbAsgn.durationMinutes) || 60);
-          setPassMark(Number(dbAsgn.passMark) || 70);
-          setAccessMode(dbAsgn.accessMode || "class");
-          setAccessPassword(dbAsgn.accessPassword || "EVALIA-2026-KEY");
+	          setTimeLimit(Number(dbAsgn.duration || dbAsgn.durationMinutes) || 60);
+	          setPassMark(Number(dbAsgn.passMark) || 70);
+	          setAccessMode(dbAsgn.accessMode || "class");
+	          setPasswordRequired(Boolean(dbAsgn.passwordRequired));
+	          setPasswordAction("keep");
+	          setAccessPassword("");
 
           if (dbAsgn.scheduledStart) {
             try { setStartDate(new Date(dbAsgn.scheduledStart).toISOString().slice(0, 16)); } catch (e) {}
@@ -267,14 +275,29 @@ function EditAssignmentContent() {
 
   // Save / Update Assignment Handler
   const handleSaveAssignment = async () => {
-    if (!title.trim()) {
-      alert("Please enter an assignment title.");
-      return;
-    }
+	    if (!title.trim()) {
+	      alert("Please enter an assignment title.");
+	      return;
+	    }
+	    if (passwordAction === "replace" && !accessPassword.trim()) {
+	      alert("Please enter the new assignment password.");
+	      return;
+	    }
+	    if (accessMode === "password" && !passwordRequired && passwordAction !== "replace") {
+	      alert("Please set a password before switching this assignment to password mode.");
+	      return;
+	    }
 
-    try {
-      setSaving(true);
-      await api.put(`/assignments/${id}`, {
+	    const passwordUpdate =
+	      passwordAction === "replace"
+	        ? { accessPassword: accessPassword.trim() }
+	        : passwordAction === "remove"
+	          ? { passwordAction: "remove" }
+	          : {};
+	
+	    try {
+	      setSaving(true);
+	      await api.put(`/assignments/${id}`, {
         title,
         description,
         instructions: description,
@@ -283,11 +306,11 @@ function EditAssignmentContent() {
         durationMinutes: Number(timeLimit),
         passMark: Number(passMark),
         scheduledStart: startDate,
-        scheduledEnd: endDate,
-        dueDate: endDate,
-        accessMode,
-        accessPassword,
-        proctoringEnabled: proctoring.enableWebcam,
+	        scheduledEnd: endDate,
+	        dueDate: endDate,
+	        accessMode,
+	        ...passwordUpdate,
+	        proctoringEnabled: proctoring.enableWebcam,
         proctoringConfig: proctoring,
         questionIds: assignedQuestions.map((q) => q.id),
         status,
@@ -754,7 +777,7 @@ function EditAssignmentContent() {
         </div>
 
         {/* RIGHT COLUMN: STICKY SIDEBAR FOR SCHEDULE & ACCESSIBILITY */}
-        <div style={{ position: "sticky", top: 84, display: "flex", flexDirection: "column", gap: 20 }}>
+        <div style={{ position: "sticky", top: 80, maxHeight: "calc(100vh - 100px)", overflowY: "auto", display: "flex", flexDirection: "column", gap: 20, paddingRight: 4, scrollbarWidth: "thin" }}>
           
           {/* SCHEDULE & ACCESSIBILITY PANEL */}
           <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 22 }}>
@@ -813,7 +836,7 @@ function EditAssignmentContent() {
                   <input
                     type="number"
                     value={timeLimit}
-                    onChange={(e) => setTimeLimit(Number(e.target.value))}
+                    onChange={(e) => setTimeLimit(e.target.value === "" ? "" : Number(e.target.value))}
                     style={{
                       width: "100%",
                       background: "var(--bg-elevated)",
@@ -834,7 +857,7 @@ function EditAssignmentContent() {
                   <input
                     type="number"
                     value={passMark}
-                    onChange={(e) => setPassMark(Number(e.target.value))}
+                    onChange={(e) => setPassMark(e.target.value === "" ? "" : Number(e.target.value))}
                     style={{
                       width: "100%",
                       background: "var(--bg-elevated)",
@@ -856,12 +879,12 @@ function EditAssignmentContent() {
                 Access & Security Key Mode
               </label>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-                {[
-                  { id: "class", label: "Enrolled Cohort Only", icon: <Users size={14} /> },
-                  { id: "password", label: "Protected Key / Password", icon: <Key size={14} /> },
-                  { id: "public", label: "Public Access Link", icon: <Globe size={14} /> },
-                ].map((mode) => (
+	              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+	                {[
+	                  { id: "class" as AccessMode, label: "Enrolled Cohort Only", icon: <Users size={14} /> },
+	                  { id: "password" as AccessMode, label: "Protected Key / Password", icon: <Key size={14} /> },
+	                  { id: "public" as AccessMode, label: "Public Access Link", icon: <Globe size={14} /> },
+	                ].map((mode) => (
                   <label
                     key={mode.id}
                     style={{
@@ -877,12 +900,12 @@ function EditAssignmentContent() {
                     }}
                   >
                     <input
-                      type="radio"
-                      name="accessMode"
-                      checked={accessMode === mode.id}
-                      onChange={() => setAccessMode(mode.id as any)}
-                      style={{ accentColor: "var(--accent)" }}
-                    />
+	                      type="radio"
+	                      name="accessMode"
+	                      checked={accessMode === mode.id}
+	                      onChange={() => setAccessMode(mode.id)}
+	                      style={{ accentColor: "var(--accent)" }}
+	                    />
                     <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-primary)", fontWeight: 500 }}>
                       {mode.icon} {mode.label}
                     </span>
@@ -890,12 +913,33 @@ function EditAssignmentContent() {
                 ))}
               </div>
 
-              {accessMode === "password" && (
-                <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
-                  <label style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Access Password Key:</label>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      value={accessPassword}
+	              {accessMode === "password" && (
+	                <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+	                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
+	                    Current status: <strong style={{ color: passwordRequired ? "var(--status-active)" : "var(--status-danger)" }}>{passwordRequired ? "Password protected" : "No password set"}</strong>
+	                  </div>
+	                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+	                    {[
+	                      { id: "keep" as PasswordAction, label: "Keep current" },
+	                      { id: "replace" as PasswordAction, label: "Set / replace" },
+	                      { id: "remove" as PasswordAction, label: "Remove" },
+	                    ].map((action) => (
+	                      <button
+	                        key={action.id}
+	                        type="button"
+	                        onClick={() => setPasswordAction(action.id)}
+	                        style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${passwordAction === action.id ? "var(--accent)" : "var(--border)"}`, background: passwordAction === action.id ? "var(--accent-muted)" : "var(--bg-surface)", color: "var(--text-primary)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+	                      >
+	                        {action.label}
+	                      </button>
+	                    ))}
+	                  </div>
+	                  {passwordAction === "replace" && (
+	                  <>
+	                  <label style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>New access password:</label>
+	                  <div style={{ display: "flex", gap: 8 }}>
+	                    <input
+	                      value={accessPassword}
                       onChange={(e) => setAccessPassword(e.target.value)}
                       style={{
                         flex: 1,
@@ -918,11 +962,13 @@ function EditAssignmentContent() {
                       onClick={copyAccessPassword}
                       style={{ padding: "6px 10px", background: "var(--accent)", border: "none", borderRadius: 6, color: "#fff", fontSize: 11, cursor: "pointer" }}
                     >
-                      {passwordCopied ? "Copied!" : "Copy"}
-                    </button>
-                  </div>
-                </div>
-              )}
+	                      {passwordCopied ? "Copied!" : "Copy"}
+	                    </button>
+	                  </div>
+	                  </>
+	                  )}
+	                </div>
+	              )}
             </div>
           </div>
 
@@ -934,12 +980,9 @@ function EditAssignmentContent() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
-                { id: "enableWebcam", label: "📷 Webcam Video Surveillance" },
-                { id: "enableMic", label: "🎙️ Microphone Audio Recording" },
+                { id: "enableWebcam", label: "📷 Camera Video Surveillance" },
                 { id: "detectTabSwitch", label: "🔒 Tab Switch & Focus Detection" },
-                { id: "shuffleQuestions", label: "🔀 Randomize Question Order" },
-                { id: "shuffleOptions", label: "🔀 Randomize Option Choices" },
-                { id: "disableCopyPaste", label: "🚫 Disable Copy, Paste & Right-Click" },
+                { id: "disableCopyPaste", label: "🚫 Disable Copy, Paste & Context Menu" },
               ].map((proc) => {
                 const checked = (proctoring as any)[proc.id];
                 return (
@@ -967,6 +1010,28 @@ function EditAssignmentContent() {
                   </label>
                 );
               })}
+            </div>
+
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed var(--border)" }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", display: "block", marginBottom: 4 }}>
+                Max Violation Threshold (Strikes before Auto-Termination)
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  value={proctoring.proctoringViolationThreshold || 5}
+                  onChange={(e) => setProctoring({ ...proctoring, proctoringViolationThreshold: Number(e.target.value) })}
+                  style={{ flex: 1, accentColor: "#6366F1" }}
+                />
+                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--accent-light)", minWidth: 70, textAlign: "right" }}>
+                  {proctoring.proctoringViolationThreshold || 5} strikes
+                </span>
+              </div>
+              <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                If a candidate violates security rules {proctoring.proctoringViolationThreshold || 5} times, the exam auto-submits immediately regardless of progress.
+              </p>
             </div>
           </div>
         </div>

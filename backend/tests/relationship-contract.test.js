@@ -52,7 +52,7 @@ test("schema role guards keep lecturers, students, classes, and enrollments type
 
   assert.match(sql, /assert_evalia_user_role/);
   assert.match(sql, /trg_user_role_lineage/);
-  assert.match(sql, /users\.role cannot change from lecturer while lecturer descendants exist/);
+  assert.match(sql, /users\.role cannot change while lecturer\/admin descendants exist/);
   assert.match(sql, /users\.role cannot change from student while student descendants exist/);
   assert.match(sql, /trg_lecturer_profile_user_role/);
   assert.match(sql, /trg_student_profile_user_role/);
@@ -88,8 +88,10 @@ test("schema rejects cross-class and cross-owner assignment question links", () 
 test("schema requires enrolled students for attempts and feedback notes and blocks duplicate active attempts", () => {
   const sql = schemaSql();
   const noteAuthor = getColumnDefinition(sql, "lecturer_feedback_notes", "created_by");
+  const attemptSnapshot = getColumnDefinition(sql, "assessment_attempts", "question_snapshot");
 
   assert.equal(noteAuthor, "created_by UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT");
+  assert.equal(attemptSnapshot, "question_snapshot JSONB DEFAULT '[]'::jsonb");
   assert.match(sql, /enforce_attempt_student_enrollment/);
   assert.match(sql, /assessment_attempts require the student to be enrolled in the assignment class/);
   assert.match(sql, /enforce_feedback_note_scope/);
@@ -112,6 +114,7 @@ test("safe migration carries the same forward relationship contract", () => {
   assert.match(sql, /^BEGIN;/);
   assert.match(sql, /ALTER TABLE lecturer_feedback_notes[\s\S]*ADD COLUMN IF NOT EXISTS created_by UUID/);
   assert.match(sql, /UPDATE lecturer_feedback_notes n[\s\S]*SET created_by = c\.lecturer_id/);
+  assert.match(sql, /ALTER TABLE assessment_attempts[\s\S]*ADD COLUMN IF NOT EXISTS question_snapshot JSONB DEFAULT '\[\]'::jsonb/);
   assert.match(sql, /UPDATE questions q[\s\S]*SET created_by = t\.lecturer_id/);
   assert.match(sql, /preflight failed: questions require valid lecturer\/admin owners and cannot cross topic owners/);
   assert.match(sql, /preflight failed: assignment_questions cannot cross class or owner scope/);
@@ -256,6 +259,8 @@ test("ClassModel reports duplicate enrollment without issuing another roster wri
 });
 
 test("ClassModel reports enrollment write constraint errors as failures", async () => {
+  let attemptedEnrollmentWrite = false;
+
   await withPatched(
     ClassModel,
     {
@@ -270,9 +275,24 @@ test("ClassModel reports enrollment write constraint errors as failures", async 
         supabaseAdmin,
         {
           from: (table) => {
-            assert.equal(table, "class_enrollments");
+            assert.equal(table, "users");
             return {
-              upsert: async () => ({ error: { message: "student_id violates role guard" } }),
+              select() {
+                return {
+                  eq() {
+                    return {
+                      maybeSingle: async () => ({
+                        data: { id: "lecturer-a", role: "lecturer" },
+                        error: null,
+                      }),
+                    };
+                  },
+                };
+              },
+              upsert: async () => {
+                attemptedEnrollmentWrite = true;
+                return { error: { message: "student_id violates role guard" } };
+              },
             };
           },
         },
@@ -284,7 +304,8 @@ test("ClassModel reports enrollment write constraint errors as failures", async 
           });
 
           assert.equal(result.success, false);
-          assert.match(result.message, /student_id violates role guard/);
+          assert.match(result.message, /Only student accounts/);
+          assert.equal(attemptedEnrollmentWrite, false);
         }
       );
     }
@@ -395,6 +416,211 @@ test("AssignmentModel validates replacement links before deleting prior assignme
         /another class/
       );
       assert.equal(deleted, false);
+    }
+  );
+});
+
+test("AssignmentModel restores prior question links when replacement insert fails", async () => {
+  const insertedRows = [];
+
+  await withPatched(
+    AssignmentModel,
+    {
+      validateQuestionLinks: async (assignmentId, questionIds) => {
+        assert.equal(assignmentId, "assignment-a");
+        assert.deepEqual(questionIds, ["question-new"]);
+      },
+      getAssignmentQuestionRows: async () => [{ question_id: "question-old", question_order: 1 }],
+    },
+    async () => {
+      await withPatched(
+        supabaseAdmin,
+        {
+          from: (table) => {
+            assert.equal(table, "assignment_questions");
+            return {
+              delete() {
+                return {
+                  eq: async () => ({ error: null }),
+                };
+              },
+              insert: async (rows) => {
+                insertedRows.push(rows);
+                if (rows[0].question_id === "question-new") {
+                  return { error: { message: "question owner mismatch" } };
+                }
+                return { error: null };
+              },
+            };
+          },
+        },
+        async () => {
+          await assert.rejects(
+            () => AssignmentModel.replaceQuestionLinks("assignment-a", ["question-new"]),
+            /question owner mismatch/
+          );
+        }
+      );
+    }
+  );
+
+  assert.deepEqual(insertedRows[0], [
+    { assignment_id: "assignment-a", question_id: "question-new", question_order: 1 },
+  ]);
+  assert.deepEqual(insertedRows[1], [
+    { assignment_id: "assignment-a", question_id: "question-old", question_order: 1 },
+  ]);
+});
+
+test("AssignmentModel starts enrolled student attempts with private answer keys stripped and a grading snapshot stored", async () => {
+  let insertedAttempt = null;
+
+  await withPatched(
+    AssignmentModel,
+    {
+      resolveStudentId: async () => "student-a",
+      canAccessAssignment: async () => true,
+      findById: async () => ({
+        id: "assignment-a",
+        title: "Midterm",
+        course: "Cloud",
+        courseCode: "CLOUD",
+        durationMinutes: 30,
+        totalPoints: 5,
+        canStart: true,
+        scheduledStart: "2026-08-30T00:00:00.000Z",
+        scheduledEnd: "2026-09-30T00:00:00.000Z",
+        proctoringConfig: { enableWebcam: true },
+        questions: [
+          {
+            id: "question-a",
+            prompt: "Pick A",
+            type: "single",
+            points: 5,
+            correctAnswer: "A",
+            options: [{ id: "opt-1", label: "A", isCorrect: true }],
+          },
+        ],
+      }),
+    },
+    async () => {
+      await withPatched(
+        supabaseAdmin,
+        {
+          from: (table) => {
+            assert.equal(table, "assessment_attempts");
+            return {
+              select() {
+                return this;
+              },
+              eq() {
+                return this;
+              },
+              order: async () => ({ data: [], error: null }),
+              insert(rows) {
+                insertedAttempt = Array.isArray(rows) ? rows[0] : rows;
+                return {
+                  select() {
+                    return {
+                      single: async () => ({
+                        data: {
+                          id: "attempt-a",
+                          ...insertedAttempt,
+                        },
+                        error: null,
+                      }),
+                    };
+                  },
+                };
+              },
+            };
+          },
+        },
+        async () => {
+          const attempt = await AssignmentModel.startAttempt("assignment-a", "student-a", {
+            userId: "student-a",
+            role: "student",
+          });
+
+          assert.equal(attempt.attemptId, "attempt-a");
+          assert.equal(insertedAttempt.student_id, "student-a");
+          assert.equal(insertedAttempt.question_snapshot[0].correctAnswer, "A");
+          assert.equal("correctAnswer" in attempt.assignment.questions[0], false);
+          assert.equal("isCorrect" in attempt.assignment.questions[0].options[0], false);
+        }
+      );
+    }
+  );
+});
+
+test("AssignmentModel grades submissions from the attempt snapshot instead of the current question bank", async () => {
+  let submittedPayload = null;
+
+  await withPatched(
+    AssignmentModel,
+    {
+      resolveStudentId: async () => "student-a",
+      canAccessAssignment: async () => true,
+      getAttemptRowForSubmission: async () => ({
+        id: "attempt-a",
+        assignment_id: "assignment-a",
+        student_id: "student-a",
+        status: "in_progress",
+        question_snapshot: [
+          {
+            id: "question-a",
+            type: "single",
+            points: 5,
+            correctAnswer: "Original",
+            options: [{ id: "opt-1", label: "Original", isCorrect: true }],
+          },
+        ],
+      }),
+      findById: async () => ({
+        id: "assignment-a",
+        totalPoints: 5,
+        questions: [
+          {
+            id: "question-a",
+            type: "single",
+            points: 5,
+            correctAnswer: "Changed",
+            options: [{ id: "opt-2", label: "Changed", isCorrect: true }],
+          },
+        ],
+      }),
+    },
+    async () => {
+      await withPatched(
+        supabaseAdmin,
+        {
+          from: (table) => {
+            assert.equal(table, "assessment_attempts");
+            return {
+              update(payload) {
+                submittedPayload = payload;
+                return {
+                  eq: async () => ({ error: null }),
+                };
+              },
+            };
+          },
+        },
+        async () => {
+          const result = await AssignmentModel.submitAttempt({
+            attemptId: "attempt-a",
+            assignmentId: "assignment-a",
+            studentId: "student-a",
+            user: { userId: "student-a", role: "student" },
+            answers: { "question-a": "opt-1" },
+            timeSpentSeconds: 60,
+          });
+
+          assert.equal(result.earnedScore, 5);
+          assert.equal(result.percentage, 100);
+          assert.equal(submittedPayload.earned_score, 5);
+        }
+      );
     }
   );
 });

@@ -56,6 +56,8 @@ export interface TopicItem {
   description?: string;
 }
 
+type AccessMode = "class" | "password" | "public";
+
 function CreateAssignmentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -93,10 +95,10 @@ function CreateAssignmentContent() {
     return d.toISOString().slice(0, 16);
   });
 
-  const [timeLimit, setTimeLimit] = useState<number>(60);
-  const [passMark, setPassMark] = useState<number>(70);
-  const [accessMode, setAccessMode] = useState<"class" | "password" | "public">("class");
-  const [accessPassword, setAccessPassword] = useState("EVALIA-2026-KEY");
+  const [timeLimit, setTimeLimit] = useState<number | string>(60);
+  const [passMark, setPassMark] = useState<number | string>(70);
+  const [accessMode, setAccessMode] = useState<AccessMode>("class");
+  const [accessPassword, setAccessPassword] = useState("");
   const [passwordCopied, setPasswordCopied] = useState(false);
 
   // Proctoring & Security State
@@ -107,6 +109,7 @@ function CreateAssignmentContent() {
     shuffleQuestions: true,
     shuffleOptions: true,
     disableCopyPaste: true,
+    proctoringViolationThreshold: 5,
   });
 
   const [publishing, setPublishing] = useState(false);
@@ -229,6 +232,10 @@ function CreateAssignmentContent() {
       alert("Please enter an assignment title.");
       return;
     }
+    if (accessMode === "password" && !accessPassword.trim()) {
+      alert("Please enter an assignment password or generate one.");
+      return;
+    }
 
     try {
       setPublishing(true);
@@ -244,7 +251,7 @@ function CreateAssignmentContent() {
         scheduledEnd: endDate,
         dueDate: endDate,
         accessMode,
-        accessPassword,
+        accessPassword: accessMode === "password" ? accessPassword.trim() : undefined,
         proctoringEnabled: proctoring.enableWebcam,
         proctoringConfig: proctoring,
         questionIds: assignedQuestions.map((q) => q.id),
@@ -715,7 +722,7 @@ function CreateAssignmentContent() {
         </div>
 
         {/* RIGHT COLUMN: STICKY SIDEBAR (SCHEDULE, ACCESSIBILITY & PROCTORING) */}
-        <div style={{ position: "sticky", top: 24, display: "flex", flexDirection: "column", gap: 20 }}>
+        <div style={{ position: "sticky", top: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto", display: "flex", flexDirection: "column", gap: 20, paddingRight: 4, scrollbarWidth: "thin" }}>
 
           {/* SCHEDULE & ACCESSIBILITY SETTINGS */}
           <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 20 }}>
@@ -778,7 +785,7 @@ function CreateAssignmentContent() {
                   min={5}
                   max={300}
                   value={timeLimit}
-                  onChange={(e) => setTimeLimit(Number(e.target.value))}
+                  onChange={(e) => setTimeLimit(e.target.value === "" ? "" : Number(e.target.value))}
                   style={{
                     width: "100%",
                     background: "var(--bg-elevated)",
@@ -802,7 +809,7 @@ function CreateAssignmentContent() {
                   min={1}
                   max={100}
                   value={passMark}
-                  onChange={(e) => setPassMark(Number(e.target.value))}
+                  onChange={(e) => setPassMark(e.target.value === "" ? "" : Number(e.target.value))}
                   style={{
                     width: "100%",
                     background: "var(--bg-elevated)",
@@ -824,14 +831,14 @@ function CreateAssignmentContent() {
                 Access Mode & Security Key
               </label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
-                {[
-                  { id: "class", label: "Class", icon: <Users size={12} /> },
-                  { id: "password", label: "Password", icon: <Key size={12} /> },
-                  { id: "public", label: "Public", icon: <Globe size={12} /> },
-                ].map((mode) => (
+	                {[
+	                  { id: "class" as AccessMode, label: "Class", icon: <Users size={12} /> },
+	                  { id: "password" as AccessMode, label: "Password", icon: <Key size={12} /> },
+	                  { id: "public" as AccessMode, label: "Public", icon: <Globe size={12} /> },
+	                ].map((mode) => (
                   <button
                     key={mode.id}
-                    onClick={() => setAccessMode(mode.id as any)}
+	                    onClick={() => setAccessMode(mode.id)}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -916,12 +923,9 @@ function CreateAssignmentContent() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
-                { key: "enableWebcam", label: "Camera Video Monitoring", desc: "Record webcam & detect face presence" },
-                { key: "enableMic", label: "Microphone Audio Detection", desc: "Detect background talking & noise" },
-                { key: "detectTabSwitch", label: "Tab Switch Detection", desc: "Flag when candidate leaves browser tab" },
-                { key: "shuffleQuestions", label: "Shuffle Question Order", desc: "Randomize question list order" },
-                { key: "shuffleOptions", label: "Shuffle Option Choices", desc: "Randomize ABCD answer choices" },
-                { key: "disableCopyPaste", label: "Disable Copy & Paste", desc: "Block clipboard copy, paste & context menu" },
+                { key: "enableWebcam", label: "📷 Camera Video Surveillance", desc: "Record webcam & detect face presence" },
+                { key: "detectTabSwitch", label: "🔒 Tab Switch & Focus Detection", desc: "Flag when candidate leaves browser tab or window" },
+                { key: "disableCopyPaste", label: "🚫 Disable Copy, Paste & Context Menu", desc: "Block clipboard copy, paste & right click" },
               ].map((item) => {
                 const val = (proctoring as any)[item.key];
                 return (
@@ -951,6 +955,28 @@ function CreateAssignmentContent() {
                   </label>
                 );
               })}
+            </div>
+
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed var(--border)" }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", display: "block", marginBottom: 4 }}>
+                Max Violation Threshold (Strikes before Auto-Termination)
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  value={proctoring.proctoringViolationThreshold || 5}
+                  onChange={(e) => setProctoring({ ...proctoring, proctoringViolationThreshold: Number(e.target.value) })}
+                  style={{ flex: 1, accentColor: "#6366F1" }}
+                />
+                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--accent-light)", minWidth: 70, textAlign: "right" }}>
+                  {proctoring.proctoringViolationThreshold || 5} strikes
+                </span>
+              </div>
+              <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                If a candidate violates security rules {proctoring.proctoringViolationThreshold || 5} times, the exam auto-submits immediately regardless of progress.
+              </p>
             </div>
           </div>
 

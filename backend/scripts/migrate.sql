@@ -60,6 +60,11 @@ CREATE TABLE IF NOT EXISTS classes (
     name VARCHAR(255) NOT NULL,
     course_code VARCHAR(50) NOT NULL,
     join_code VARCHAR(20) UNIQUE NOT NULL,
+    invitation_token_hash TEXT,
+    invitation_status VARCHAR(20) DEFAULT 'revoked' CHECK (invitation_status IN ('active', 'paused', 'revoked')),
+    invitation_expires_at TIMESTAMP WITH TIME ZONE,
+    invitation_join_count INT DEFAULT 0,
+    invitation_rotated_at TIMESTAMP WITH TIME ZONE,
     department VARCHAR(150),
     assessment_weighting NUMERIC(5,2) DEFAULT 30.00,
     pass_threshold NUMERIC(5,2) DEFAULT 60.00,
@@ -75,6 +80,16 @@ CREATE TABLE IF NOT EXISTS class_enrollments (
     student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(class_id, student_id)
+);
+
+-- 6B. CLASS ANNOUNCEMENTS TABLE
+CREATE TABLE IF NOT EXISTS class_announcements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+    created_by UUID REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 7. TOPICS TABLE
@@ -145,6 +160,7 @@ ALTER TABLE assignments ADD COLUMN IF NOT EXISTS instructions TEXT;
 ALTER TABLE assignments ADD COLUMN IF NOT EXISTS pass_mark NUMERIC(6,2) DEFAULT 70.00;
 ALTER TABLE assignments ADD COLUMN IF NOT EXISTS access_mode VARCHAR(50) DEFAULT 'class';
 ALTER TABLE assignments ADD COLUMN IF NOT EXISTS access_password VARCHAR(255);
+ALTER TABLE assignments ADD COLUMN IF NOT EXISTS access_password_hash VARCHAR(255);
 ALTER TABLE assignments ADD COLUMN IF NOT EXISTS enable_webcam BOOLEAN DEFAULT TRUE;
 ALTER TABLE assignments ADD COLUMN IF NOT EXISTS enable_mic BOOLEAN DEFAULT FALSE;
 ALTER TABLE assignments ADD COLUMN IF NOT EXISTS detect_tab_switch BOOLEAN DEFAULT TRUE;
@@ -178,6 +194,7 @@ CREATE TABLE IF NOT EXISTS assessment_attempts (
     status attempt_status DEFAULT 'in_progress',
     time_spent_seconds INT DEFAULT 0,
     answers JSONB DEFAULT '{}'::jsonb,
+    question_snapshot JSONB DEFAULT '[]'::jsonb,
     started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     submitted_at TIMESTAMP WITH TIME ZONE
 );
@@ -214,9 +231,12 @@ CREATE TABLE IF NOT EXISTS ai_analytics_cache (
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_classes_join_code ON classes(join_code);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_invitation_token_hash ON classes(invitation_token_hash) WHERE invitation_token_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_classes_invitation_status ON classes(invitation_status);
 CREATE INDEX IF NOT EXISTS idx_student_profiles_index_number ON student_profiles(index_number);
 CREATE INDEX IF NOT EXISTS idx_topics_class ON topics(class_id);
 CREATE INDEX IF NOT EXISTS idx_questions_topic ON questions(topic_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_access_password_hash ON assignments(access_password_hash) WHERE access_password_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attempts_student ON assessment_attempts(student_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_assignment ON assessment_attempts(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_proctoring_attempt ON proctoring_logs(attempt_id);

@@ -34,7 +34,8 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
       if (typeof window !== "undefined") {
         sessionStorage.setItem("evalia_return_url", pathname);
       }
-      router.push(`/?login=true&redirect=${encodeURIComponent(pathname)}`);
+      const targetLogin = pathname.startsWith("/admin") ? "/auth/admin" : "/auth/candidate";
+      router.replace(targetLogin);
       return;
     }
 
@@ -43,9 +44,9 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
       if (!allowedRoles.includes(user.role)) {
         console.warn(`Unauthorized access attempt to ${pathname} by role ${user.role}`);
         if (user.role === "student") {
-          router.push("/user");
+          router.replace("/user");
         } else {
-          router.push("/admin");
+          router.replace("/admin");
         }
       }
     }

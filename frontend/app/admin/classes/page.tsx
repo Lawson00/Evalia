@@ -18,19 +18,41 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import api from "@/lib/api";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export interface ClassCohort {
   id: string;
   name: string;
   classCode: string;
-  joinCode: string;
+  joinCode?: string;
   department: string;
   subscribedStudentsCount: number;
   avgScorePercent?: number;
   assessmentWeighting?: number;
   passThreshold?: number;
   isEnrollmentOpen?: boolean;
+  invitationStatus?: "active" | "paused" | "revoked";
+  invitationExpiresAt?: string | null;
+  invitationJoinCount?: number;
+  hasInvitationLink?: boolean;
   createdAt: string;
+}
+
+interface ClassesResponse {
+  classes?: ClassCohort[];
+  data?: {
+    classes?: ClassCohort[];
+  };
+}
+
+interface InvitationResponse {
+  invitation?: {
+    status: "active" | "paused" | "revoked";
+    expiresAt: string | null;
+    joinedCount: number;
+    hasLink: boolean;
+    url?: string;
+  };
 }
 
 export default function ClassHubPage() {
@@ -73,8 +95,8 @@ export default function ClassHubPage() {
   const fetchClasses = async () => {
     try {
       setLoading(true);
-      const res = await api.get<any>("/classes");
-      const list = res.classes || res.data?.classes || res;
+      const res = await api.get<ClassesResponse | ClassCohort[]>("/classes");
+      const list = Array.isArray(res) ? res : res.classes || res.data?.classes || [];
       setClasses(Array.isArray(list) ? list : []);
     } catch (err) {
       console.error("Failed to load classes:", err);
@@ -99,25 +121,59 @@ export default function ClassHubPage() {
     ? (classes.reduce((sum, c) => sum + (c.avgScorePercent || 78.4), 0) / classes.length).toFixed(1)
     : "78.4";
 
-  const handleCopyLink = (classItem: ClassCohort, e: React.MouseEvent) => {
+  const handleCopyLink = async (classItem: ClassCohort, e: React.MouseEvent) => {
     e.stopPropagation();
-    const link = `${window.location.origin}/join/${classItem.joinCode}`;
-    navigator.clipboard.writeText(link);
-    setCopiedId(classItem.id);
-    setTimeout(() => setCopiedId(null), 2000);
+    const cleanCode = classItem.joinCode || classItem.classCode || classItem.id;
+    let linkToCopy = `${window.location.origin}/join/${encodeURIComponent(cleanCode)}`;
+
+    try {
+      const response = await api.post<any>(`/classes/${classItem.id}/invitation/rotate`, {});
+      const invite = response?.invitation || response?.data?.invitation || response;
+      if (invite?.url) {
+        linkToCopy = invite.url;
+      } else if (invite?.invitationToken) {
+        linkToCopy = `${window.location.origin}/join/${invite.invitationToken}`;
+      }
+      if (invite) {
+        setClasses((current) =>
+          current.map((item) =>
+            item.id === classItem.id
+              ? {
+                  ...item,
+                  invitationStatus: invite.status || "active",
+                  invitationExpiresAt: invite.expiresAt || null,
+                  invitationJoinCount: invite.joinedCount || 0,
+                  hasInvitationLink: true,
+                }
+              : item
+          )
+        );
+      }
+    } catch (err) {
+      console.warn("Server link rotation error, falling back to direct class invite URL:", err);
+    }
+
+    const copied = await copyToClipboard(linkToCopy);
+    if (copied) {
+      setCopiedId(classItem.id);
+      setTimeout(() => setCopiedId(null), 2500);
+      showNotification("Class invite link copied to clipboard!");
+    } else {
+      showNotification("Failed to copy link automatically. Please try again.");
+    }
   };
 
   const handleCreateClass = async () => {
     if (!createForm.name.trim()) return;
     try {
       setIsCreating(true);
-      const res = await api.post<any>("/classes", {
+      const res = await api.post<{ class?: ClassCohort; data?: { class?: ClassCohort } }>("/classes", {
         name: createForm.name,
         classCode: createForm.classCode,
         department: createForm.department,
       });
 
-      const created = res.class || res.data?.class || res;
+      const created = res.class || res.data?.class;
       if (created && created.id) {
         setClasses([created, ...classes]);
       } else {
@@ -127,8 +183,8 @@ export default function ClassHubPage() {
       setCreateModalOpen(false);
       showNotification(`Class cohort "${createForm.name}" created successfully!`);
       setCreateForm({ name: "", classCode: "CS 101", department: "Computer Science" });
-    } catch (err: any) {
-      alert(err.message || "Failed to create class cohort.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to create class cohort.");
     } finally {
       setIsCreating(false);
     }
@@ -149,13 +205,13 @@ export default function ClassHubPage() {
     if (!editingClass || !editForm.name.trim()) return;
     try {
       setIsEditing(true);
-      const res = await api.put<any>(`/classes/${editingClass.id}/settings`, {
+      const res = await api.put<{ class?: ClassCohort; data?: { class?: ClassCohort } }>(`/classes/${editingClass.id}/settings`, {
         name: editForm.name,
         classCode: editForm.classCode,
         department: editForm.department,
       });
 
-      const updated = res.class || res.data?.class || res;
+      const updated = res.class || res.data?.class;
       if (updated && updated.id) {
         setClasses(classes.map((c) => (c.id === editingClass.id ? { ...c, ...updated } : c)));
       } else {
@@ -165,8 +221,8 @@ export default function ClassHubPage() {
       setEditModalOpen(false);
       showNotification(`Class cohort "${editForm.name}" updated successfully!`);
       setEditingClass(null);
-    } catch (err: any) {
-      alert(err.message || "Failed to update class details.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to update class details.");
     } finally {
       setIsEditing(false);
     }
@@ -187,8 +243,8 @@ export default function ClassHubPage() {
       setDeleteModalOpen(false);
       showNotification(`Class cohort "${classToDelete.name}" deleted successfully.`);
       setClassToDelete(null);
-    } catch (err: any) {
-      alert(err.message || "Failed to delete class cohort.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete class cohort.");
     } finally {
       setIsDeleting(false);
     }
@@ -257,7 +313,7 @@ export default function ClassHubPage() {
           { label: "Total Active Classes", value: classes.length, color: "var(--text-primary)" },
           { label: "Subscribed Students", value: totalStudents, color: "var(--accent-light)" },
           { label: "Class Average Score", value: `${overallAvg}%`, color: "var(--status-active)" },
-          { label: "Active Join Links", value: classes.length, color: "var(--status-info)" },
+          { label: "Active Join Links", value: classes.filter((item) => item.invitationStatus === "active").length, color: "var(--status-info)" },
         ].map((s) => (
           <div key={s.label} style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 18px" }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: s.color, marginBottom: 2 }}>{s.value}</div>
@@ -380,19 +436,19 @@ export default function ClassHubPage() {
                     marginBottom: 16,
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
-                      🔗 Shareable 1-Click Invite Link
-                    </span>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent-light)", background: "var(--accent-muted)", padding: "2px 6px", borderRadius: 4 }}>
-                      Code: {c.joinCode}
-                    </span>
-                  </div>
+	                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+	                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
+	                      Managed Invitation Link
+	                    </span>
+	                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent-light)", background: "var(--accent-muted)", padding: "2px 6px", borderRadius: 4 }}>
+	                      {(c.invitationStatus || "revoked").toUpperCase()}
+	                    </span>
+	                  </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <input
-                      readOnly
-                      value={`${typeof window !== "undefined" ? window.location.origin : ""}/join/${c.joinCode}`}
+	                      readOnly
+	                      value={c.hasInvitationLink ? "Secure link stored. Rotate to reveal a fresh URL." : "No active invitation link"}
                       style={{
                         flex: 1,
                         background: "transparent",
@@ -420,10 +476,14 @@ export default function ClassHubPage() {
                       }}
                     >
                       {copiedId === c.id ? <Check size={12} /> : <Copy size={12} />}
-                      {copiedId === c.id ? "Copied!" : "Copy Link"}
-                    </button>
-                  </div>
-                </div>
+	                      {copiedId === c.id ? "Copied!" : "Rotate & Copy"}
+	                    </button>
+	                  </div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>
+                      {c.invitationJoinCount || 0} joined via link
+                      {c.invitationExpiresAt ? ` · Expires ${new Date(c.invitationExpiresAt).toLocaleDateString()}` : " · No expiry set"}
+                    </div>
+	                </div>
               </div>
 
               <div>

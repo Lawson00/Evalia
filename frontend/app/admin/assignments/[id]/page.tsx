@@ -330,11 +330,11 @@ export default function AssignmentDetailPage() {
     startDate: "",
     dueDate: "",
     timeLimit: 60,
-    maxAttempts: 1,
-    passScore: 70,
-    accessMode: "class" as "class" | "password" | "public",
-    accessPassword: "",
-    description: "",
+	    maxAttempts: 1,
+	    passScore: 70,
+	    accessMode: "class" as "class" | "password" | "public",
+	    passwordRequired: false,
+	    description: "",
     proctoring: {
       webcam: true,
       mic: false,
@@ -406,11 +406,11 @@ export default function AssignmentDetailPage() {
             courseTitle: dbAsgn.course || "Computer Science",
             status: dbAsgn.status || "active",
             targetGroup: dbAsgn.assignedTo || dbAsgn.course || "Class Cohort",
-            timeLimit: Number(dbAsgn.duration || dbAsgn.durationMinutes) || 60,
-            passScore: Number(dbAsgn.passMark) || 70,
-            accessMode: dbAsgn.accessMode || "class",
-            accessPassword: dbAsgn.accessPassword || "EVALIA-2026-KEY",
-            description: dbAsgn.description || "",
+	            timeLimit: Number(dbAsgn.duration || dbAsgn.durationMinutes) || 60,
+	            passScore: Number(dbAsgn.passMark) || 70,
+	            accessMode: dbAsgn.accessMode || "class",
+	            passwordRequired: Boolean(dbAsgn.passwordRequired),
+	            description: dbAsgn.description || "",
             proctoring: dbAsgn.proctoringConfig || dbAsgn.proctoring || prev.proctoring,
             enrolled: Number(dbAsgn.enrolled) || 0,
             submitted: Number(dbAsgn.submitted || dbAsgn.submissions) || 0,
@@ -433,10 +433,10 @@ export default function AssignmentDetailPage() {
         if (bankQuestions.length > 0) {
           const formatted = bankQuestions.map((q: any) => ({
             id: q.id,
-            topicId: q.topic_id || "t1",
-            topicTitle: q.topics?.name || q.topics?.title || "Topic Concept",
-            courseCode: q.course_code || "CLOUD 301",
-            text: q.question_text || q.prompt || "Question sentence",
+            topicId: q.topicId || q.topic_id || "t1",
+            topicTitle: q.topicTitle || q.topics?.name || q.topics?.title || "Topic Concept",
+            courseCode: q.courseCode || q.course_code || "CLOUD 301",
+            text: q.text || q.question_text || q.prompt || "Question sentence",
             type: q.type || "MCQ",
             difficulty: (q.difficulty || "Medium").charAt(0).toUpperCase() + (q.difficulty || "Medium").slice(1).toLowerCase(),
             points: Number(q.points) || 2,
@@ -465,9 +465,14 @@ export default function AssignmentDetailPage() {
 
   // Remove question handler
   const handleRemoveQuestion = async (qId: string) => {
-    setAssignedQuestions((prev) => prev.filter((q) => q.id !== qId));
     try {
-      await api.post(`/assignments/${id}/questions`, { removeQuestionIds: [qId] });
+      const res = await api.post<any>(`/assignments/${id}/questions`, { removeQuestionIds: [qId] });
+      const updatedAsgn = res.assignment || res.data?.assignment;
+      if (updatedAsgn?.questions && Array.isArray(updatedAsgn.questions)) {
+        setAssignedQuestions(updatedAsgn.questions);
+      } else {
+        setAssignedQuestions((prev) => prev.filter((q) => q.id !== qId));
+      }
     } catch (err) {
       console.error("Failed sync removing question:", err);
     }
@@ -521,11 +526,10 @@ export default function AssignmentDetailPage() {
       await api.put(`/assignments/${id}`, {
         title: assignment.title,
         description: assignment.description,
-        durationMinutes: assignment.timeLimit,
-        passMark: assignment.passScore,
-        accessMode: assignment.accessMode,
-        accessPassword: assignment.accessPassword,
-        proctoringConfig: assignment.proctoring,
+	        durationMinutes: assignment.timeLimit,
+	        passMark: assignment.passScore,
+	        accessMode: assignment.accessMode,
+	        proctoringConfig: assignment.proctoring,
         scheduledStart: assignment.startDate,
         dueDate: assignment.dueDate,
         status: assignment.status,
@@ -768,7 +772,7 @@ export default function AssignmentDetailPage() {
                       { label: "Time Limit", value: `${assignment.timeLimit} minutes` },
                       { label: "Max Retries Allowed", value: `${assignment.maxAttempts} attempts` },
                       { label: "Pass Score Threshold", value: `${assignment.passScore}%` },
-                      { label: "Access Mode", value: assignment.accessMode === "class" ? "Enrolled Cohort" : assignment.accessMode === "password" ? `Protected Key (${assignment.accessPassword})` : "Public Link" },
+	                      { label: "Access Mode", value: assignment.accessMode === "class" ? "Enrolled Cohort" : assignment.passwordRequired ? "Password protected" : "Public Link" },
                     ].map((row) => (
                       <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid var(--border-subtle)", fontSize: 12 }}>
                         <span style={{ color: "var(--text-muted)" }}>{row.label}</span>
@@ -783,12 +787,9 @@ export default function AssignmentDetailPage() {
                   <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Active Proctoring & Security Controls</h3>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
                     {[
-                      { label: "📷 Webcam Video Surveillance", enabled: assignment.proctoring.webcam },
-                      { label: "🎙️ Microphone Audio Recording", enabled: assignment.proctoring.mic },
-                      { label: "🔒 Tab Switch & Focus Detection", enabled: assignment.proctoring.tabSwitch },
-                      { label: "🔀 Randomize Question Order", enabled: assignment.proctoring.shuffleQuestions },
-                      { label: "🔀 Randomize Answer Options", enabled: assignment.proctoring.shuffleOptions },
-                      { label: "🚫 Block Copy / Paste & Right Click", enabled: assignment.proctoring.disableCopyPaste },
+                      { label: "📷 Camera Video Surveillance", enabled: Boolean((assignment.proctoring as any).enableWebcam ?? assignment.proctoring.webcam) },
+                      { label: "🔒 Tab Switch & Focus Detection", enabled: Boolean((assignment.proctoring as any).detectTabSwitch ?? assignment.proctoring.tabSwitch) },
+                      { label: "🚫 Block Copy, Paste & Context Menu", enabled: Boolean(assignment.proctoring.disableCopyPaste) },
                     ].map((sec) => (
                       <div
                         key={sec.label}

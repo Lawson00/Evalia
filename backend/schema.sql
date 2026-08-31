@@ -70,6 +70,11 @@ CREATE TABLE classes (
     name VARCHAR(255) NOT NULL,
     course_code VARCHAR(50) NOT NULL,
     join_code VARCHAR(20) UNIQUE NOT NULL,
+    invitation_token_hash TEXT,
+    invitation_status VARCHAR(20) DEFAULT 'revoked' CHECK (invitation_status IN ('active', 'paused', 'revoked')),
+    invitation_expires_at TIMESTAMP WITH TIME ZONE,
+    invitation_join_count INT DEFAULT 0,
+    invitation_rotated_at TIMESTAMP WITH TIME ZONE,
     department VARCHAR(150),
     assessment_weighting NUMERIC(5,2) DEFAULT 30.00,
     pass_threshold NUMERIC(5,2) DEFAULT 60.00,
@@ -85,6 +90,16 @@ CREATE TABLE class_enrollments (
     student_id UUID NOT NULL REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
     joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(class_id, student_id)
+);
+
+-- 7B. CLASS ANNOUNCEMENTS TABLE (Official Course Stream & Notes)
+CREATE TABLE class_announcements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    class_id UUID NOT NULL REFERENCES classes(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    created_by UUID REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 8. TOPICS TABLE (Question Bank Categories)
@@ -128,6 +143,7 @@ CREATE TABLE assignments (
     duration_minutes INT DEFAULT 60,
     access_mode VARCHAR(50) DEFAULT 'class', -- 'class', 'password', 'public'
     access_password VARCHAR(255),
+    access_password_hash VARCHAR(255),
     proctoring_enabled BOOLEAN DEFAULT TRUE,
     enable_webcam BOOLEAN DEFAULT TRUE,
     enable_mic BOOLEAN DEFAULT FALSE,
@@ -167,6 +183,7 @@ CREATE TABLE assessment_attempts (
     status attempt_status DEFAULT 'in_progress',
     time_spent_seconds INT DEFAULT 0,
     answers JSONB DEFAULT '{}'::jsonb,
+    question_snapshot JSONB DEFAULT '[]'::jsonb,
     started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     submitted_at TIMESTAMP WITH TIME ZONE
 );
@@ -227,8 +244,8 @@ CREATE OR REPLACE FUNCTION enforce_user_role_lineage()
 RETURNS TRIGGER AS $$
 BEGIN
     IF OLD.role IS DISTINCT FROM NEW.role THEN
-        IF OLD.role = 'lecturer'
-            AND NEW.role NOT IN ('lecturer', 'admin')
+        IF OLD.role IN ('lecturer', 'admin')
+            AND NEW.role <> OLD.role
             AND (
                 EXISTS (SELECT 1 FROM lecturer_profiles WHERE user_id = OLD.id)
                 OR EXISTS (SELECT 1 FROM classes WHERE lecturer_id = OLD.id)
@@ -237,7 +254,7 @@ BEGIN
                 OR EXISTS (SELECT 1 FROM questions WHERE created_by = OLD.id)
                 OR EXISTS (SELECT 1 FROM lecturer_feedback_notes WHERE created_by = OLD.id)
             ) THEN
-            RAISE EXCEPTION 'users.role cannot change from lecturer while lecturer descendants exist'
+            RAISE EXCEPTION 'users.role cannot change while lecturer/admin descendants exist'
                 USING ERRCODE = 'check_violation';
         END IF;
 
@@ -551,6 +568,8 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
 CREATE INDEX idx_classes_lecturer ON classes(lecturer_id);
 CREATE INDEX idx_classes_join_code ON classes(join_code);
+CREATE UNIQUE INDEX idx_classes_invitation_token_hash ON classes(invitation_token_hash) WHERE invitation_token_hash IS NOT NULL;
+CREATE INDEX idx_classes_invitation_status ON classes(invitation_status);
 CREATE INDEX idx_student_profiles_index_number ON student_profiles(index_number);
 CREATE INDEX idx_class_enrollments_student ON class_enrollments(student_id);
 CREATE INDEX idx_topics_class ON topics(class_id);
@@ -559,6 +578,7 @@ CREATE INDEX idx_questions_topic ON questions(topic_id);
 CREATE INDEX idx_questions_created_by ON questions(created_by);
 CREATE INDEX idx_assignments_class ON assignments(class_id);
 CREATE INDEX idx_assignments_created_by ON assignments(created_by);
+CREATE INDEX idx_assignments_access_password_hash ON assignments(access_password_hash) WHERE access_password_hash IS NOT NULL;
 CREATE INDEX idx_assignment_questions_order ON assignment_questions(assignment_id, question_order);
 CREATE INDEX idx_attempts_student ON assessment_attempts(student_id);
 CREATE INDEX idx_attempts_assignment ON assessment_attempts(assignment_id);

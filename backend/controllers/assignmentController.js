@@ -49,6 +49,7 @@ const createAssignment = async (req, res, next) => {
 
     const assignment = await AssignmentModel.createAssignment({
       lecturerId: req.user?.userId,
+      user: req.user,
       title,
       description: description || instructions,
       classId,
@@ -91,6 +92,13 @@ const updateAssignment = async (req, res, next) => {
     const canManage = await AssignmentModel.canManageAssignment(id, req.user);
     if (!canManage) {
       return sendError(res, "Access forbidden for this assignment.", null, 403);
+    }
+
+    if (req.body?.classId) {
+      const canManageClass = await ClassModel.canManageClass(req.body.classId, req.user);
+      if (!canManageClass) {
+        return sendError(res, "Access forbidden for the target class.", null, 403);
+      }
     }
 
     const assignment = await AssignmentModel.updateAssignment(id, req.body);
@@ -165,6 +173,119 @@ const getAssignmentAIInsights = async (req, res, next) => {
   }
 };
 
+const startAttempt = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const studentId = req.user?.userId;
+    if (!studentId) {
+      return sendError(res, "Authentication required to start attempt.", null, 401);
+    }
+    if (req.user?.role !== "student") {
+      return sendError(res, "Only students can start assignment attempts.", null, 403);
+    }
+    const assignmentAccessToken = req.body?.assignmentAccessToken || req.headers["x-assignment-access-token"] || null;
+    const attemptData = await AssignmentModel.startAttempt(id, studentId, req.user, assignmentAccessToken);
+    return sendSuccess(res, "Started assignment attempt session.", attemptData);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const unlockAssignment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const studentId = req.user?.userId;
+    if (!studentId) {
+      return sendError(res, "Authentication required to unlock assignment.", null, 401);
+    }
+    if (req.user?.role !== "student") {
+      return sendError(res, "Only students can unlock assignment attempts.", null, 403);
+    }
+    const unlock = await AssignmentModel.unlockAssignment(id, studentId, req.user, req.body?.password);
+    return sendSuccess(res, "Assignment access verified.", unlock);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const logProctoringEvent = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { attemptId, eventType, severity, metadata } = req.body;
+    const studentId = req.user?.userId;
+    if (!studentId) {
+      return sendError(res, "Authentication required to log proctoring events.", null, 401);
+    }
+    if (req.user?.role !== "student") {
+      return sendError(res, "Only students can log assignment proctoring events.", null, 403);
+    }
+
+    await AssignmentModel.logProctoringEvent({
+      attemptId,
+      assignmentId: id,
+      studentId,
+      eventType,
+      severity,
+      metadata,
+    });
+
+    return sendSuccess(res, "Logged proctoring integrity event.");
+  } catch (err) {
+    next(err);
+  }
+};
+
+const submitAttempt = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { attemptId, answers, timeSpentSeconds, reason } = req.body;
+    const studentId = req.user?.userId;
+    if (!studentId) {
+      return sendError(res, "Authentication required to submit attempt.", null, 401);
+    }
+    if (req.user?.role !== "student") {
+      return sendError(res, "Only students can submit assignment attempts.", null, 403);
+    }
+
+    const result = await AssignmentModel.submitAttempt({
+      attemptId,
+      assignmentId: id,
+      studentId,
+      user: req.user,
+      answers,
+      timeSpentSeconds,
+      reason,
+    });
+
+    return sendSuccess(res, "Assignment attempt submitted successfully.", { result });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getAttemptResult = async (req, res, next) => {
+  try {
+    const { attemptId } = req.params;
+    const result = await AssignmentModel.getAttemptByIdForUser(attemptId, req.user);
+    if (!result) {
+      return sendError(res, "Attempt record not found.", null, 404);
+    }
+    return sendSuccess(res, "Fetched attempt result details.", { result });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getStudentResults = async (req, res, next) => {
+  try {
+    const studentId = req.user?.userId;
+    const data = await AssignmentModel.getStudentResultsList(studentId, req.user);
+    return sendSuccess(res, "Fetched student assessment results.", data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getAssignments,
   createAssignment,
@@ -173,4 +294,10 @@ module.exports = {
   deleteAssignment,
   addRemoveQuestions,
   getAssignmentAIInsights,
+  unlockAssignment,
+  startAttempt,
+  logProctoringEvent,
+  submitAttempt,
+  getAttemptResult,
+  getStudentResults,
 };

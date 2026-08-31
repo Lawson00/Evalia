@@ -10,6 +10,7 @@ import {
   CircleHelp,
   LayoutDashboard,
   Menu,
+  User,
   Settings,
 } from "lucide-react";
 import { useState } from "react";
@@ -49,10 +50,10 @@ export function UserShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="sidebar-bottom">
           <Link
-            className={pathname === "/user/settings" ? "active" : ""}
-            href="/user/settings"
+            className={pathname === "/user/profile" ? "active" : ""}
+            href="/user/profile"
           >
-            <Settings size={18} /> Settings
+            <User size={18} /> Profile
           </Link>
           <Link
             className={pathname === "/user/help" ? "active" : ""}

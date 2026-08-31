@@ -11,7 +11,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  Settings,
+  User,
   Trophy,
 } from "lucide-react";
 import { useState } from "react";
@@ -20,12 +20,12 @@ import { useAuth } from "@/context/AuthContext";
 const mainNav = [
   { label: "Overview", icon: LayoutDashboard, href: "/user", exact: true },
   { label: "My Classes", icon: GraduationCap, href: "/user/classes", exact: false },
-  { label: "Assessments", icon: BookOpen, href: "/user/assessments", exact: false },
+  { label: "Assignments", icon: BookOpen, href: "/user/assignments", exact: false },
   { label: "Results", icon: Trophy, href: "/user/results", exact: false },
 ];
 
 const utilNav = [
-  { label: "Settings", icon: Settings, href: "/user/settings" },
+  { label: "Profile", icon: User, href: "/user/profile" },
   { label: "Help Centre", icon: CircleHelp, href: "/user/help" },
 ];
 
@@ -93,35 +93,60 @@ export function UserShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="sidebar-bottom">
-          <button
-            onClick={logout}
+          <div
             style={{
-              width: "100%",
               display: "flex",
               alignItems: "center",
-              gap: 10,
-              padding: "10px 14px",
-              background: "rgba(239, 68, 68, 0.08)",
-              border: "1px solid rgba(239, 68, 68, 0.18)",
-              borderRadius: 10,
-              color: "#ef4444",
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-              marginTop: 6,
-              marginBottom: 12,
+              gap: 8,
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: "1px solid var(--user-line, var(--border))",
             }}
           >
-            <LogOut size={16} /> Sign Out
-          </button>
-          <Link href="/user/settings" className="profile-mini" style={{ textDecoration: "none", color: "inherit" }}>
-            <span className="avatar">{getInitials()}</span>
-            <div>
-              <strong>{displayName}</strong>
-              <small>{subtitle}</small>
-            </div>
-            <ChevronDown size={16} />
-          </Link>
+            <Link
+              href="/user/profile"
+              className="profile-mini"
+              style={{
+                textDecoration: "none",
+                color: "inherit",
+                flex: 1,
+                marginTop: 0,
+                paddingTop: 0,
+                borderTop: "none",
+                minWidth: 0,
+              }}
+            >
+              <span className="avatar">{getInitials()}</span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <strong style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {displayName}
+                </strong>
+                <small style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {subtitle}
+                </small>
+              </div>
+            </Link>
+            <button
+              onClick={logout}
+              title="Sign Out"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 34,
+                height: 34,
+                borderRadius: 8,
+                background: "rgba(239, 68, 68, 0.08)",
+                border: "1px solid rgba(239, 68, 68, 0.18)",
+                color: "#ef4444",
+                cursor: "pointer",
+                flexShrink: 0,
+                transition: "all 0.2s ease",
+              }}
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       </aside>
 

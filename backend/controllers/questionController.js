@@ -15,7 +15,7 @@ const getTopics = async (req, res, next) => {
       return sendError(res, "Access forbidden for this class.", null, 403);
     }
 
-    const topics = await QuestionModel.getTopics({ classId });
+    const topics = await QuestionModel.getTopics({ classId, user: req.user });
     return sendSuccess(res, "Fetched topics successfully.", { topics });
   } catch (err) {
     next(err);
@@ -39,6 +39,7 @@ const createTopic = async (req, res, next) => {
       courseCode,
       description,
       lecturerId: req.user?.userId,
+      user: req.user,
     });
     return sendSuccess(res, "Topic category created successfully!", { topic }, 201);
   } catch (err) {
@@ -49,12 +50,17 @@ const createTopic = async (req, res, next) => {
 const updateTopic = async (req, res, next) => {
   try {
     const { topicId } = req.params;
+    const canManageTopic = await QuestionModel.canManageTopic(topicId, req.user);
+    if (!canManageTopic) {
+      return sendError(res, "Access forbidden for this topic.", null, 403);
+    }
+
     const canManageClass = await userCanManageTopicClass(req.body?.classId, req.user);
     if (!canManageClass) {
       return sendError(res, "Access forbidden for this class.", null, 403);
     }
 
-    const topic = await QuestionModel.updateTopic(topicId, req.body);
+    const topic = await QuestionModel.updateTopic(topicId, req.body, req.user);
     if (!topic) return sendError(res, "Topic not found.", null, 404);
     return sendSuccess(res, "Topic updated successfully.", { topic });
   } catch (err) {
@@ -65,7 +71,11 @@ const updateTopic = async (req, res, next) => {
 const deleteTopic = async (req, res, next) => {
   try {
     const { topicId } = req.params;
-    await QuestionModel.deleteTopic(topicId);
+    const canManageTopic = await QuestionModel.canManageTopic(topicId, req.user);
+    if (!canManageTopic) {
+      return sendError(res, "Access forbidden for this topic.", null, 403);
+    }
+    await QuestionModel.deleteTopic(topicId, req.user);
     return sendSuccess(res, "Topic deleted successfully.");
   } catch (err) {
     next(err);
@@ -75,7 +85,13 @@ const deleteTopic = async (req, res, next) => {
 const getQuestions = async (req, res, next) => {
   try {
     const { topicId, difficulty, search } = req.query;
-    const questions = await QuestionModel.getQuestions({ topicId, difficulty, search });
+    if (topicId) {
+      const canManageTopic = await QuestionModel.canManageTopic(topicId, req.user);
+      if (!canManageTopic) {
+        return sendError(res, "Access forbidden for this topic.", null, 403);
+      }
+    }
+    const questions = await QuestionModel.getQuestions({ topicId, difficulty, search, user: req.user });
     return sendSuccess(res, "Fetched questions.", { questions });
   } catch (err) {
     next(err);
@@ -88,6 +104,12 @@ const createQuestion = async (req, res, next) => {
     if (!questionText || !correctAnswer) {
       return sendError(res, "questionText and correctAnswer are required.", null, 400);
     }
+    if (topicId) {
+      const canManageTopic = await QuestionModel.canManageTopic(topicId, req.user);
+      if (!canManageTopic) {
+        return sendError(res, "Access forbidden for this topic.", null, 403);
+      }
+    }
     const question = await QuestionModel.createQuestion({
       topicId,
       questionText,
@@ -98,6 +120,7 @@ const createQuestion = async (req, res, next) => {
       type,
       points,
       createdBy: req.user?.userId,
+      user: req.user,
     });
     return sendSuccess(res, "Question added to Question Bank!", { question }, 201);
   } catch (err) {
@@ -111,7 +134,7 @@ const bulkCreateQuestions = async (req, res, next) => {
     if (!Array.isArray(questions) || questions.length === 0) {
       return sendError(res, "Questions array is required for bulk creation.", null, 400);
     }
-    const created = await QuestionModel.bulkCreateQuestions(questions, req.user?.userId);
+    const created = await QuestionModel.bulkCreateQuestions(questions, req.user);
     return sendSuccess(res, `Successfully saved ${created.length} approved questions to Question Bank!`, { questions: created }, 201);
   } catch (err) {
     next(err);
@@ -130,8 +153,9 @@ const aiGenerateQuestions = async (req, res, next) => {
       difficulty: difficulty || "mixed",
       questionType: questionType || type || "mixed",
       questionTypes,
-      previewOnly: previewOnly !== undefined ? Boolean(previewOnly) : true, // Default to preview mode for UI review & modification
+      previewOnly: previewOnly !== undefined ? Boolean(previewOnly) : true,
       createdBy: req.user?.userId,
+      user: req.user,
     });
     return sendSuccess(
       res,
@@ -149,7 +173,17 @@ const aiGenerateQuestions = async (req, res, next) => {
 const updateQuestion = async (req, res, next) => {
   try {
     const { questionId } = req.params;
-    const question = await QuestionModel.updateQuestion(questionId, req.body);
+    const canManageQuestion = await QuestionModel.canManageQuestion(questionId, req.user);
+    if (!canManageQuestion) {
+      return sendError(res, "Access forbidden for this question.", null, 403);
+    }
+    if (req.body?.topicId) {
+      const canManageTopic = await QuestionModel.canManageTopic(req.body.topicId, req.user);
+      if (!canManageTopic) {
+        return sendError(res, "Access forbidden for the target topic.", null, 403);
+      }
+    }
+    const question = await QuestionModel.updateQuestion(questionId, req.body, req.user);
     if (!question) return sendError(res, "Question not found.", null, 404);
     return sendSuccess(res, "Question updated.", { question });
   } catch (err) {
@@ -160,7 +194,11 @@ const updateQuestion = async (req, res, next) => {
 const deleteQuestion = async (req, res, next) => {
   try {
     const { questionId } = req.params;
-    await QuestionModel.deleteQuestion(questionId);
+    const canManageQuestion = await QuestionModel.canManageQuestion(questionId, req.user);
+    if (!canManageQuestion) {
+      return sendError(res, "Access forbidden for this question.", null, 403);
+    }
+    await QuestionModel.deleteQuestion(questionId, req.user);
     return sendSuccess(res, "Question deleted.");
   } catch (err) {
     next(err);
@@ -173,7 +211,13 @@ const bulkDeleteQuestions = async (req, res, next) => {
     if (!Array.isArray(questionIds) || questionIds.length === 0) {
       return sendError(res, "questionIds array is required for bulk deletion.", null, 400);
     }
-    await QuestionModel.bulkDeleteQuestions(questionIds);
+    for (const questionId of questionIds) {
+      const canManageQuestion = await QuestionModel.canManageQuestion(questionId, req.user);
+      if (!canManageQuestion) {
+        return sendError(res, "Access forbidden for one or more questions.", null, 403);
+      }
+    }
+    await QuestionModel.bulkDeleteQuestions(questionIds, req.user);
     return sendSuccess(res, `Successfully deleted ${questionIds.length} questions.`);
   } catch (err) {
     next(err);

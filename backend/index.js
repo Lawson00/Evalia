@@ -12,6 +12,7 @@ const assignmentRoutes = require("./routes/assignmentRoutes");
 const analyticsRoutes = require("./routes/analyticsRoutes");
 const aiAdminRoutes = require("./routes/aiAdminRoutes");
 const searchRoutes = require("./routes/searchRoutes");
+const studentRoutes = require("./routes/studentRoutes");
 const errorHandler = require("./middlewares/errorHandler");
 
 const app = express();
@@ -37,6 +38,7 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/classes", classRoutes);
 app.use("/api/v1/questions", questionRoutes);
 app.use("/api/v1/assignments", assignmentRoutes);
+app.use("/api/v1/student", studentRoutes);
 app.use("/api/v1/analytics", analyticsRoutes);
 app.use("/api/v1/ai", aiAdminRoutes);
 app.use("/api/v1/search", searchRoutes);

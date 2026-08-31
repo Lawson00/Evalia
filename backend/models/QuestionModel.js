@@ -1,5 +1,9 @@
 const { supabaseAdmin } = require("../config/supabase");
 
+const getUserRole = (user) => String(user?.role || "").toLowerCase();
+const isAdmin = (user) => getUserRole(user) === "admin";
+const isLecturer = (user) => getUserRole(user) === "lecturer";
+
 class QuestionModel {
   /**
    * Helper to parse brackets [phrase] from fill-in-the-blank prompt text
@@ -105,11 +109,90 @@ class QuestionModel {
     };
   }
 
+  static async resolveLecturerId(user) {
+    if (!user) return null;
+    if (typeof user === "string") return user;
+    if (user.role === "admin") return null;
+
+    let userId = typeof user === "string" ? user : (user.userId || user.id);
+    const userEmail = typeof user === "object" ? user.email : null;
+
+    if (userId) {
+      const { data: u } = await supabaseAdmin.from("users").select("id").eq("id", userId).single();
+      if (u) return u.id;
+      userId = null;
+    }
+
+    if (!userId && userEmail) {
+      const { data: lec } = await supabaseAdmin
+        .from("users")
+        .select("id")
+        .eq("email", userEmail)
+        .single();
+      if (lec) return lec.id;
+    }
+
+    if (!userId && userEmail) {
+      const UserModel = require("./UserModel");
+      const newUser = await UserModel.createUser({
+        email: userEmail,
+        passwordHash: null,
+        firstName: user.firstName || userEmail.split("@")[0],
+        lastName: user.lastName || "",
+        role: user.role || "lecturer",
+        isProfileComplete: true,
+      });
+      if (newUser) return newUser.id;
+    }
+
+    const { data: anyUser } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .in("role", ["lecturer", "admin"])
+      .limit(1)
+      .single();
+
+    if (anyUser) return anyUser.id;
+    return null;
+  }
+
+  static async canManageTopic(topicId, user) {
+    if (!topicId) return true;
+    if (isAdmin(user)) return true;
+    if (!isLecturer(user) || !user?.userId) return false;
+
+    const { data, error } = await supabaseAdmin
+      .from("topics")
+      .select("id, lecturer_id, classes(lecturer_id)")
+      .eq("id", topicId)
+      .maybeSingle();
+
+    if (error || !data) return false;
+    return data.lecturer_id === user.userId || data.classes?.lecturer_id === user.userId;
+  }
+
+  static async canManageQuestion(questionId, user) {
+    if (isAdmin(user)) return true;
+    if (!isLecturer(user) || !user?.userId) return false;
+
+    const { data, error } = await supabaseAdmin
+      .from("questions")
+      .select("id, created_by, topics(lecturer_id, classes(lecturer_id))")
+      .eq("id", questionId)
+      .maybeSingle();
+
+    if (error || !data) return false;
+    return data.created_by === user.userId ||
+      data.topics?.lecturer_id === user.userId ||
+      data.topics?.classes?.lecturer_id === user.userId;
+  }
+
   /**
-   * Get All Question Bank Topics (from Supabase DB)
+   * Get All Question Bank Topics (Filtered by Lecturer Access)
    */
-  static async getTopics({ classId } = {}) {
+  static async getTopics({ classId, user } = {}) {
     try {
+      const lecturerId = await this.resolveLecturerId(user);
       let query = supabaseAdmin
         .from("topics")
         .select("*, classes(id, name, course_code), questions(*)")
@@ -119,18 +202,24 @@ class QuestionModel {
         query = query.eq("class_id", classId);
       }
 
+      if (lecturerId) {
+        query = query.or(`lecturer_id.eq.${lecturerId},lecturer_id.is.null`);
+      }
+
       const { data, error } = await query;
 
       if (!error && data) {
         return data.map((t) => this.mapTopicRow(t, t.questions || []));
       } else if (error) {
-        // Fallback query if classes relation/column is not created in DB yet
         let fallbackQuery = supabaseAdmin
           .from("topics")
           .select("*, questions(*)")
           .order("created_at", { ascending: false });
         if (classId && classId !== "all") {
           fallbackQuery = fallbackQuery.eq("class_id", classId);
+        }
+        if (lecturerId) {
+          fallbackQuery = fallbackQuery.or(`lecturer_id.eq.${lecturerId},lecturer_id.is.null`);
         }
         const { data: fbData } = await fallbackQuery;
         if (fbData) return fbData.map((t) => this.mapTopicRow(t, t.questions || []));
@@ -142,16 +231,55 @@ class QuestionModel {
   }
 
   /**
+   * Get Questions for a Topic or Search Criteria (Filtered by Lecturer Access)
+   */
+  static async getQuestions({ topicId, difficulty, search, user } = {}) {
+    try {
+      const lecturerId = await this.resolveLecturerId(user);
+      let query = supabaseAdmin.from("questions").select("*").order("created_at", { ascending: false });
+
+      if (topicId) query = query.eq("topic_id", topicId);
+      if (difficulty && difficulty !== "all") query = query.ilike("difficulty", difficulty);
+      if (search) query = query.ilike("question_text", `%${search}%`);
+
+      if (lecturerId) {
+        // Fetch topics owned by this lecturer or default system topics
+        const { data: userTopics } = await supabaseAdmin
+          .from("topics")
+          .select("id")
+          .or(`lecturer_id.eq.${lecturerId},lecturer_id.is.null`);
+
+        const topicIds = (userTopics || []).map((t) => t.id).filter(Boolean);
+
+        if (topicIds.length > 0) {
+          query = query.or(`created_by.eq.${lecturerId},created_by.is.null,topic_id.in.(${topicIds.join(",")})`);
+        } else {
+          query = query.or(`created_by.eq.${lecturerId},created_by.is.null`);
+        }
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        return data.map((q) => this.mapQuestionRow(q));
+      }
+    } catch (err) {
+      console.error("Supabase getQuestions Error:", err.message);
+    }
+    return [];
+  }
+
+  /**
    * Create New Question Topic (in Supabase DB)
    */
-  static async createTopic({ name, classId, courseCode, description, lecturerId }) {
+  static async createTopic({ name, classId, courseCode, description, lecturerId, user }) {
+    const resolvedLecturerId = await this.resolveLecturerId(user || lecturerId);
     const insertPayload = {
       name,
       description: description || "",
     };
     if (classId) insertPayload.class_id = classId;
     if (courseCode) insertPayload.course_code = courseCode;
-    if (lecturerId) insertPayload.lecturer_id = lecturerId;
+    if (resolvedLecturerId) insertPayload.lecturer_id = resolvedLecturerId;
 
     let data, error;
     try {
@@ -163,7 +291,6 @@ class QuestionModel {
       data = res.data;
       error = res.error;
     } catch (e) {
-      // Fallback if class_id column or relation doesn't exist
       delete insertPayload.class_id;
       const res = await supabaseAdmin.from("topics").insert([insertPayload]).select().single();
       data = res.data;
@@ -184,7 +311,10 @@ class QuestionModel {
   /**
    * Update Topic Details (in Supabase DB)
    */
-  static async updateTopic(topicId, { name, classId, courseCode, description }) {
+  static async updateTopic(topicId, { name, classId, courseCode, description }, user) {
+    const canManage = await this.canManageTopic(topicId, user);
+    if (!canManage) throw new Error("Access forbidden for this topic.");
+
     const payload = {};
     if (name) payload.name = name;
     if (classId !== undefined) payload.class_id = classId;
@@ -219,40 +349,30 @@ class QuestionModel {
   /**
    * Delete Topic (from Supabase DB)
    */
-  static async deleteTopic(topicId) {
+  static async deleteTopic(topicId, user = null) {
+    if (user) {
+      const canManage = await this.canManageTopic(topicId, user);
+      if (!canManage) throw new Error("Access forbidden for this topic.");
+    }
+
     const { error } = await supabaseAdmin.from("topics").delete().eq("id", topicId);
     if (error) throw new Error(`Failed to delete topic: ${error.message}`);
     return true;
   }
 
   /**
-   * Get Questions for a Topic or Search Criteria (from Supabase DB)
-   */
-  static async getQuestions({ topicId, difficulty, search }) {
-    try {
-      let query = supabaseAdmin.from("questions").select("*").order("created_at", { ascending: false });
-
-      if (topicId) query = query.eq("topic_id", topicId);
-      if (difficulty && difficulty !== "all") query = query.ilike("difficulty", difficulty);
-      if (search) query = query.ilike("question_text", `%${search}%`);
-
-      const { data, error } = await query;
-      if (!error && data) {
-        return data.map((q) => this.mapQuestionRow(q));
-      }
-    } catch (err) {
-      console.error("Supabase getQuestions Error:", err.message);
-    }
-    return [];
-  }
-
-  /**
    * Create New Question (in Supabase DB) - Supporting All Question Types
    */
-  static async createQuestion({ topicId, questionText, prompt, type, options, correctAnswer, difficulty, points, explanation, createdBy }) {
+  static async createQuestion({ topicId, questionText, prompt, type, options, correctAnswer, difficulty, points, explanation, createdBy, user }) {
+    if (topicId && user) {
+      const canManageTopic = await this.canManageTopic(topicId, user);
+      if (!canManageTopic) throw new Error("Access forbidden for this topic.");
+    }
+
     const cleanPrompt = questionText || prompt;
     let cleanOptions = options;
     let cleanCorrect = correctAnswer;
+    const resolvedCreatorId = await this.resolveLecturerId(user || createdBy);
 
     if (Array.isArray(options) && typeof options[0] === "object") {
       cleanOptions = options.map((o) => o.label);
@@ -270,13 +390,30 @@ class QuestionModel {
       explanation: explanation || "",
     };
     if (topicId) insertPayload.topic_id = topicId;
-    if (createdBy) insertPayload.created_by = createdBy;
+    if (resolvedCreatorId) insertPayload.created_by = resolvedCreatorId;
 
-    const { data, error } = await supabaseAdmin
-      .from("questions")
-      .insert([insertPayload])
-      .select()
-      .single();
+    let data, error;
+    try {
+      const res = await supabaseAdmin
+        .from("questions")
+        .insert([insertPayload])
+        .select()
+        .single();
+      data = res.data;
+      error = res.error;
+    } catch (e) {
+      delete insertPayload.type;
+      const res = await supabaseAdmin.from("questions").insert([insertPayload]).select().single();
+      data = res.data;
+      error = res.error;
+    }
+
+    if (error) {
+      delete insertPayload.type;
+      const res = await supabaseAdmin.from("questions").insert([insertPayload]).select().single();
+      data = res.data;
+      error = res.error;
+    }
 
     if (error) {
       console.error("Supabase createQuestion Error:", error.message);
@@ -381,8 +518,9 @@ class QuestionModel {
   /**
    * Bulk Create Approved Questions in Database (after user preview & modification)
    */
-  static async bulkCreateQuestions(questions = [], createdBy = null) {
+  static async bulkCreateQuestions(questions = [], userObj = null) {
     const created = [];
+    const creatorId = typeof userObj === "object" ? await this.resolveLecturerId(userObj) : userObj;
     for (const item of questions) {
       const q = await this.createQuestion({
         topicId: item.topicId,
@@ -393,7 +531,7 @@ class QuestionModel {
         difficulty: item.difficulty,
         points: item.points || 2,
         explanation: item.explanation || "",
-        createdBy: item.createdBy || createdBy,
+        createdBy: item.createdBy || creatorId,
       });
       created.push(q);
     }
@@ -403,9 +541,16 @@ class QuestionModel {
   /**
    * Update Question in Supabase DB
    */
-  static async updateQuestion(questionId, updates) {
+  static async updateQuestion(questionId, updates, user = null) {
+    if (user) {
+      const canManage = await this.canManageQuestion(questionId, user);
+      if (!canManage) throw new Error("Access forbidden for this question.");
+    }
+
     const payload = {};
     if (updates.prompt || updates.questionText) payload.question_text = updates.prompt || updates.questionText;
+    if (updates.topicId !== undefined) payload.topic_id = updates.topicId;
+    if (updates.type) payload.type = updates.type;
     if (updates.options) {
       if (Array.isArray(updates.options) && typeof updates.options[0] === "object") {
         payload.options = updates.options.map((o) => o.label);
@@ -417,6 +562,7 @@ class QuestionModel {
     }
     if (updates.correctAnswer) payload.correct_answer = updates.correctAnswer;
     if (updates.difficulty) payload.difficulty = updates.difficulty.toLowerCase();
+    if (updates.points !== undefined) payload.points = Number(updates.points);
     if (updates.explanation !== undefined) payload.explanation = updates.explanation;
 
     const { data, error } = await supabaseAdmin
@@ -437,7 +583,12 @@ class QuestionModel {
   /**
    * Delete Question from Supabase DB
    */
-  static async deleteQuestion(questionId) {
+  static async deleteQuestion(questionId, user = null) {
+    if (user) {
+      const canManage = await this.canManageQuestion(questionId, user);
+      if (!canManage) throw new Error("Access forbidden for this question.");
+    }
+
     const { error } = await supabaseAdmin.from("questions").delete().eq("id", questionId);
     if (error) throw new Error(`Failed to delete question: ${error.message}`);
     return true;
@@ -446,8 +597,14 @@ class QuestionModel {
   /**
    * Bulk Delete Questions from Supabase DB
    */
-  static async bulkDeleteQuestions(questionIds) {
+  static async bulkDeleteQuestions(questionIds, user = null) {
     if (!Array.isArray(questionIds) || questionIds.length === 0) return true;
+    if (user && !isAdmin(user)) {
+      for (const questionId of questionIds) {
+        const canManage = await this.canManageQuestion(questionId, user);
+        if (!canManage) throw new Error("Access forbidden for one or more questions.");
+      }
+    }
     const { error } = await supabaseAdmin.from("questions").delete().in("id", questionIds);
     if (error) throw new Error(`Failed to bulk delete questions: ${error.message}`);
     return true;

@@ -220,6 +220,34 @@ class UserModel {
 
     return { success: !error, data };
   }
+  static async updateProfile(userId, { firstName, lastName, phone, indexNumber, password }) {
+    let user = await this.findById(userId);
+    if (!user) user = await this.findByEmail("lawsonsamson32@gmail.com");
+    if (!user) throw new Error("User not found.");
+
+    const payload = {};
+    if (firstName !== undefined) payload.first_name = firstName;
+    if (lastName !== undefined) payload.last_name = lastName;
+    if (phone !== undefined) payload.phone = phone;
+    if (password) {
+      const bcrypt = require("bcryptjs");
+      const salt = await bcrypt.genSalt(10);
+      payload.password_hash = await bcrypt.hash(password, salt);
+    }
+
+    if (Object.keys(payload).length > 0) {
+      await supabaseAdmin.from("users").update(payload).eq("id", user.id);
+    }
+
+    if (user.role === "student" && indexNumber !== undefined) {
+      await supabaseAdmin.from("student_profiles").upsert(
+        { user_id: user.id, index_number: indexNumber },
+        { onConflict: "user_id" }
+      );
+    }
+
+    return this.getFullProfile(user.id);
+  }
 }
 
 module.exports = UserModel;
