@@ -33,7 +33,11 @@ export function SettingsPage() {
   useEffect(() => {
     let isMounted = true;
     const fetchProfile = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("evalia_token") || localStorage.getItem("token") : null;
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("evalia_token") ||
+            localStorage.getItem("token")
+          : null;
       try {
         setLoading(true);
         const res = await fetch("http://localhost:5000/api/v1/auth/me", {
@@ -58,7 +62,10 @@ export function SettingsPage() {
           setPhone(user.phone || "");
         }
       } catch (err) {
-        console.warn("Could not fetch profile from server, using auth context:", err);
+        console.warn(
+          "Could not fetch profile from server, using auth context:",
+          err,
+        );
         if (isMounted && user) {
           setFirstName(user.firstName || "");
           setLastName(user.lastName || "");
@@ -72,7 +79,9 @@ export function SettingsPage() {
     };
 
     fetchProfile();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [user]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -84,7 +93,10 @@ export function SettingsPage() {
       return;
     }
 
-    const token = typeof window !== "undefined" ? localStorage.getItem("evalia_token") || localStorage.getItem("token") : null;
+    const token =
+      typeof window !== "undefined"
+        ? localStorage.getItem("evalia_token") || localStorage.getItem("token")
+        : null;
     try {
       setSaving(true);
       const res = await fetch("http://localhost:5000/api/v1/auth/profile", {
@@ -112,7 +124,9 @@ export function SettingsPage() {
         setErrorMsg(data.message || "Failed to update profile details.");
       }
     } catch (err: any) {
-      setErrorMsg(err.message || "Server connection error while saving profile.");
+      setErrorMsg(
+        err.message || "Server connection error while saving profile.",
+      );
     } finally {
       setSaving(false);
     }
@@ -127,10 +141,38 @@ export function SettingsPage() {
   if (loading) {
     return (
       <main className="detail-page settings-page">
-        <div style={{ padding: "60px 20px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#ffffff", borderRadius: 16, border: "1px solid #e6e9ef", marginTop: 24, boxShadow: "0 4px 12px rgba(0,0,0,0.02)" }}>
-          <Loader2 size={36} className="animate-spin" style={{ color: "#6255e7", marginBottom: 16 }} />
-          <p style={{ fontSize: 14, fontWeight: 700, color: "#1d2536", margin: "0 0 4px" }}>Loading profile details…</p>
-          <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>Fetching user info from backend server</p>
+        <div
+          style={{
+            padding: "60px 20px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#ffffff",
+            borderRadius: 16,
+            border: "1px solid #e6e9ef",
+            marginTop: 24,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.02)",
+          }}
+        >
+          <Loader2
+            size={36}
+            className="animate-spin"
+            style={{ color: "#6255e7", marginBottom: 16 }}
+          />
+          <p
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "#1d2536",
+              margin: "0 0 4px",
+            }}
+          >
+            Loading profile details…
+          </p>
+          <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>
+            Fetching user info from backend server
+          </p>
         </div>
       </main>
     );
@@ -142,10 +184,16 @@ export function SettingsPage() {
       <div className="page-intro">
         <p className="eyebrow">Student Account</p>
         <h1>My Profile</h1>
-        <p>View and update your personal information, index number, and portal credentials.</p>
+        <p>
+          View and update your personal information, index number, and portal
+          credentials.
+        </p>
       </div>
 
-      <div className="settings-layout" style={{ display: "block", maxWidth: 840 }}>
+      <div
+        className="settings-layout"
+        style={{ display: "block", maxWidth: 840 }}
+      >
         <form onSubmit={handleSaveProfile} className="settings-stack">
           {/* Profile Identity Card */}
           <section id="profile" className="settings-card">
@@ -155,26 +203,70 @@ export function SettingsPage() {
               </div>
               <div>
                 <h2>Personal Details</h2>
-                <p>Your identity as visible to lecturers and course administrators.</p>
+                <p>
+                  Your identity as visible to lecturers and course
+                  administrators.
+                </p>
               </div>
             </div>
 
-            <div className="profile-editor" style={{ display: "flex", alignItems: "center", gap: 16, margin: "20px 0" }}>
-              <span className="avatar profile-avatar" style={{ width: 64, height: 64, borderRadius: "50%", background: "#6255e7", color: "#fff", display: "grid", placeItems: "center", fontSize: 22, fontWeight: 800 }}>
+            <div
+              className="profile-editor"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 16,
+                margin: "20px 0",
+              }}
+            >
+              <span
+                className="avatar profile-avatar"
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: "50%",
+                  background: "#6255e7",
+                  color: "#fff",
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: 22,
+                  fontWeight: 800,
+                }}
+              >
                 {getInitials()}
               </span>
               <div>
-                <h3 style={{ fontSize: 16, fontWeight: 800, color: "#1d2536", margin: 0 }}>
+                <h3
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 800,
+                    color: "#1d2536",
+                    margin: 0,
+                  }}
+                >
                   {firstName} {lastName}
                 </h3>
-                <p style={{ fontSize: 13, color: "#64748b", margin: "2px 0 0" }}>
+                <p
+                  style={{ fontSize: 13, color: "#64748b", margin: "2px 0 0" }}
+                >
                   Student Portal Member
                 </p>
               </div>
             </div>
 
             {errorMsg && (
-              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
+              <div
+                style={{
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  color: "#dc2626",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  marginBottom: 16,
+                }}
+              >
                 {errorMsg}
               </div>
             )}
@@ -228,21 +320,31 @@ export function SettingsPage() {
                   type="email"
                   value={email}
                   disabled
-                  style={{ background: "#f8fafc", color: "#64748b", cursor: "not-allowed" }}
+                  style={{
+                    background: "#f8fafc",
+                    color: "#64748b",
+                    cursor: "not-allowed",
+                  }}
                 />
               </label>
             </div>
           </section>
 
           {/* Security & Password Update Card */}
-          <section id="security" className="settings-card" style={{ marginTop: 24 }}>
+          <section
+            id="security"
+            className="settings-card"
+            style={{ marginTop: 24 }}
+          >
             <div className="card-title">
               <div className="setting-icon">
                 <ShieldCheck size={18} />
               </div>
               <div>
                 <h2>Account Security</h2>
-                <p>Update your password to keep your student account protected.</p>
+                <p>
+                  Update your password to keep your student account protected.
+                </p>
               </div>
             </div>
 
@@ -268,11 +370,29 @@ export function SettingsPage() {
               </label>
             </div>
 
-            <div className="settings-footer" style={{ marginTop: 24, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ color: "#16a34a", fontSize: 13, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <div
+              className="settings-footer"
+              style={{
+                marginTop: 24,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span
+                style={{
+                  color: "#16a34a",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
                 {saved && (
                   <>
-                    <Check size={16} /> Profile &amp; security details saved successfully!
+                    <Check size={16} /> Profile &amp; security details saved
+                    successfully!
                   </>
                 )}
               </span>
@@ -281,7 +401,14 @@ export function SettingsPage() {
                 type="submit"
                 disabled={saving}
                 className="primary-button"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px", fontSize: 13, fontWeight: 700 }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 24px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
               >
                 {saving ? (
                   <>
